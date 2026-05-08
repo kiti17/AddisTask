@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios from "axios";
+import "./App.css";
 
 const API = "http://127.0.0.1:8000";
 
@@ -10,145 +11,212 @@ export default function App() {
 
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
+  const [taskCategory, setTaskCategory] = useState("");
+  const [taskLocation, setTaskLocation] = useState("");
 
   const [providerName, setProviderName] = useState("");
+  const [providerCategory, setProviderCategory] = useState("");
+  const [providerCity, setProviderCity] = useState("");
 
   const [selectedTask, setSelectedTask] = useState(null);
   const [matches, setMatches] = useState([]);
   const [applications, setApplications] = useState([]);
 
+  const authHeader = { headers: { Authorization: `Bearer ${token}` } };
+
   const login = async () => {
-    const res = await axios.post(`${API}/api/auth/login`, {
-      phone,
-      password,
-    });
-    setToken(res.data.access_token);
-    alert("Logged in");
+    try {
+      const res = await axios.post(`${API}/api/auth/login`, { phone, password });
+      setToken(res.data.access_token);
+      alert("Logged in successfully");
+    } catch (err) {
+      alert(err.response?.data?.detail || "Login failed");
+    }
   };
 
   const createTask = async () => {
-    await axios.post(
-      `${API}/api/tasks/`,
-      {
-        title: taskTitle,
-        description: "Test",
-        category: "Plumbing",
-        location: "Addis Ababa",
-        budget: 50,
-      },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    alert("Task created");
+    try {
+      if (!token) return alert("Login first");
+      await axios.post(
+        `${API}/api/tasks/`,
+        {
+          title: taskTitle,
+          description: "Customer task",
+          category: taskCategory,
+          location: taskLocation,
+          budget: 50,
+        },
+        authHeader
+      );
+      alert("Task created");
+      loadTasks();
+    } catch (err) {
+      alert(err.response?.data?.detail || "Task creation failed");
+    }
   };
 
   const loadTasks = async () => {
-    const res = await axios.get(`${API}/api/tasks/`);
-    setTasks(res.data);
+    try {
+      const res = await axios.get(`${API}/api/tasks/`);
+      setTasks(res.data);
+    } catch {
+      alert("Failed to load tasks");
+    }
   };
 
   const createProvider = async () => {
-    await axios.post(
-      `${API}/api/providers/`,
-      {
-        business_name: providerName,
-        skill_category: "Plumbing",
-        city: "Addis Ababa",
-      },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    alert("Provider created");
+    try {
+      if (!token) return alert("Login first");
+      await axios.post(
+        `${API}/api/providers/`,
+        {
+          business_name: providerName,
+          skill_category: providerCategory,
+          city: providerCity,
+        },
+        authHeader
+      );
+      alert("Provider created");
+    } catch (err) {
+      alert(err.response?.data?.detail || "Provider creation failed");
+    }
   };
 
   const loadMatches = async (taskId) => {
-    setSelectedTask(taskId);
-    const res = await axios.get(`${API}/api/providers/match/${taskId}`);
-    setMatches(res.data);
+    try {
+      setSelectedTask(taskId);
+      const res = await axios.get(`${API}/api/providers/match/${taskId}`);
+      setMatches(res.data);
+    } catch {
+      alert("Failed to load matches");
+    }
   };
 
   const applyToTask = async (taskId) => {
-    await axios.post(
-      `${API}/api/applications/`,
-      { task_id: taskId },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    alert("Applied!");
+    try {
+      if (!token) return alert("Login first");
+      await axios.post(`${API}/api/applications/`, { task_id: taskId }, authHeader);
+      alert("Applied to task");
+    } catch (err) {
+      alert(err.response?.data?.detail || "Apply failed");
+    }
   };
 
   const loadApplications = async (taskId) => {
-    const res = await axios.get(`${API}/api/applications/task/${taskId}`);
-    setApplications(res.data);
+    try {
+      const res = await axios.get(`${API}/api/applications/task/${taskId}`);
+      setApplications(res.data);
+    } catch {
+      alert("Failed to load applications");
+    }
   };
 
   const acceptApplication = async (id) => {
-    await axios.patch(
-      `${API}/api/applications/${id}/status?status=accepted`,
-      {},
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    alert("Accepted!");
+    try {
+      if (!token) return alert("Login first");
+      await axios.patch(
+        `${API}/api/applications/${id}/status?status=accepted`,
+        {},
+        authHeader
+      );
+      alert("Accepted");
+      loadTasks();
+    } catch (err) {
+      alert(err.response?.data?.detail || "Accept failed");
+    }
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>AddisTask</h1>
+    <div className="page">
+      <header className="hero">
+        <div>
+          <h1>AddisTask</h1>
+          <p>Smart local service marketplace for Addis Ababa</p>
+        </div>
+        <span className={token ? "badge online" : "badge"}>
+          {token ? "Logged in" : "Not logged in"}
+        </span>
+      </header>
 
-      <h2>Login</h2>
-      <input placeholder="Phone" onChange={(e) => setPhone(e.target.value)} />
-      <input type="password" placeholder="Password" onChange={(e) => setPassword(e.target.value)} />
-      <button onClick={login}>Login</button>
+      <main className="grid">
+        <section className="card">
+          <h2>Login</h2>
+          <input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <button onClick={login}>Login</button>
+        </section>
 
-      <h2>Create Task</h2>
-      <input placeholder="Task title" onChange={(e) => setTaskTitle(e.target.value)} />
-      <button onClick={createTask}>Create Task</button>
+        <section className="card">
+          <h2>Create Task</h2>
+          <input placeholder="Task title" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
+          <input placeholder="Category e.g. Cleaning" value={taskCategory} onChange={(e) => setTaskCategory(e.target.value)} />
+          <input placeholder="Location e.g. Addis Ababa" value={taskLocation} onChange={(e) => setTaskLocation(e.target.value)} />
+          <button onClick={createTask}>Create Task</button>
+        </section>
 
-      <h2>Create Provider</h2>
-      <input placeholder="Business name" onChange={(e) => setProviderName(e.target.value)} />
-      <button onClick={createProvider}>Create Provider</button>
+        <section className="card">
+          <h2>Create Provider</h2>
+          <input placeholder="Business name" value={providerName} onChange={(e) => setProviderName(e.target.value)} />
+          <input placeholder="Skill category e.g. Cleaning" value={providerCategory} onChange={(e) => setProviderCategory(e.target.value)} />
+          <input placeholder="City e.g. Addis Ababa" value={providerCity} onChange={(e) => setProviderCity(e.target.value)} />
+          <button onClick={createProvider}>Create Provider</button>
+        </section>
+      </main>
 
-      <h2>Tasks</h2>
-      <button onClick={loadTasks}>Load Tasks</button>
+      <section className="card wide">
+        <div className="section-header">
+          <h2>Tasks</h2>
+          <button onClick={loadTasks}>Load Tasks</button>
+        </div>
 
-      <ul>
-        {tasks.map((t) => (
-          <li key={t.id}>
-            {t.title} ({t.status})
-            <button onClick={() => loadMatches(t.id)}>Match</button>
-            <button onClick={() => applyToTask(t.id)}>Apply</button>
-            <button onClick={() => loadApplications(t.id)}>Applications</button>
-          </li>
-        ))}
-      </ul>
+        <div className="list">
+          {tasks.map((t) => (
+            <div className="row" key={t.id}>
+              <div>
+                <strong>{t.title}</strong>
+                <p>{t.location} • {t.category} • Status: {t.status}</p>
+              </div>
+              <div className="actions">
+                <button onClick={() => loadMatches(t.id)}>Smart Match</button>
+                <button onClick={() => applyToTask(t.id)}>Apply</button>
+                <button onClick={() => loadApplications(t.id)}>Applications</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {selectedTask && (
-        <>
-          <h2>Matched Providers</h2>
-          <ul>
+        <section className="card wide">
+          <h2>Matched Providers for Task #{selectedTask}</h2>
+          <div className="list">
             {matches.map((m) => (
-              <li key={m.provider_id}>
-                {m.business_name} - score: {m.match_score}
-              </li>
+              <div className="row" key={m.provider_id}>
+                <div>
+                  <strong>{m.business_name}</strong>
+                  <p>{m.skill_category} • {m.city}</p>
+                </div>
+                <span className="score">Score: {m.match_score}</span>
+              </div>
             ))}
-          </ul>
-        </>
+          </div>
+        </section>
       )}
 
-      <h2>Applications</h2>
-      <ul>
-        {applications.map((a) => (
-          <li key={a.application_id}>
-            {a.business_name} ({a.status})
-            <button onClick={() => acceptApplication(a.application_id)}>Accept</button>
-          </li>
-        ))}
-      </ul>
+      <section className="card wide">
+        <h2>Applications</h2>
+        <div className="list">
+          {applications.map((a) => (
+            <div className="row" key={a.application_id}>
+              <div>
+                <strong>{a.business_name}</strong>
+                <p>{a.skill_category} • {a.city} • Status: {a.status}</p>
+              </div>
+              <button onClick={() => acceptApplication(a.application_id)}>Accept</button>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
