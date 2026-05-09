@@ -34,6 +34,12 @@ def apply_to_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    if provider.skill_category.lower() != task.category.lower():
+        raise HTTPException(
+            status_code=400,
+            detail="Provider skill does not match this task category"
+        )
+
     existing_application = db.query(Application).filter(
         Application.task_id == application.task_id,
         Application.provider_id == provider.id

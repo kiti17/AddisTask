@@ -92,8 +92,11 @@ def match_providers_for_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    providers = db.query(ProviderProfile).all()
-
+    providers = db.query(ProviderProfile).filter(
+    ProviderProfile.skill_category.ilike(task.category),
+    ProviderProfile.city.ilike(task.location)
+    ).all()
+    
     ranked = sorted(
         providers,
         key=lambda p: calculate_score(p, task),
@@ -114,4 +117,22 @@ def match_providers_for_task(
             "city_match": p.city.lower() == task.location.lower()
         }
         for p in ranked
+    ]
+
+@router.get("/")
+def get_providers(db: Session = Depends(get_db)):
+    providers = db.query(ProviderProfile).all()
+
+    return [
+        {
+            "id": p.id,
+            "user_id": p.user_id,
+            "business_name": p.business_name,
+            "skill_category": p.skill_category,
+            "city": p.city,
+            "rating": p.rating,
+            "completed_tasks": p.completed_tasks,
+            "response_time_minutes": p.response_time_minutes
+        }
+        for p in providers
     ]
