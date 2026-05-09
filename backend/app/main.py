@@ -22,7 +22,10 @@ app = FastAPI(
 )
 
 
-origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+origins = [
+    "http://localhost:5173",
+    "https://addistask-1.onrender.com",
+]
 
 app.add_middleware(
     CORSMiddleware,
