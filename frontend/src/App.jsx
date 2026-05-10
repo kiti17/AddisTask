@@ -25,8 +25,7 @@ export default function App() {
   const authHeader = { headers: { Authorization: `Bearer ${token}` } };
 
 const login = async () => {
-  alert("Login button clicked");
-
+  
   try {
     console.log("Trying login with:", phone, password);
     console.log("API URL:", API);
