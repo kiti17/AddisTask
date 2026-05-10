@@ -24,15 +24,26 @@ export default function App() {
 
   const authHeader = { headers: { Authorization: `Bearer ${token}` } };
 
-  const login = async () => {
-    try {
-      const res = await axios.post(`${API}/api/auth/login`, { phone, password });
-      setToken(res.data.access_token);
-      alert("Logged in successfully");
-    } catch (err) {
-      alert(err.response?.data?.detail || "Login failed");
-    }
-  };
+const login = async () => {
+  alert("Login button clicked");
+
+  try {
+    console.log("Trying login with:", phone, password);
+    console.log("API URL:", API);
+
+    const res = await axios.post(`${API}/api/auth/login`, {
+      phone,
+      password,
+    });
+
+    console.log("Login response:", res.data);
+    setToken(res.data.access_token);
+    alert("Logged in successfully");
+  } catch (err) {
+    console.error("Login error:", err.response?.data || err.message);
+    alert(err.response?.data?.detail || "Login failed");
+  }
+};
 
   const createTask = async () => {
     try {
