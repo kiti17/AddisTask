@@ -7,7 +7,9 @@ const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 export default function App() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(
+  localStorage.getItem("token") || ""
+  );
 
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
@@ -36,12 +38,18 @@ const login = async () => {
     });
 
     console.log("Login response:", res.data);
+    localStorage.setItem("token", res.data.access_token);
     setToken(res.data.access_token);
     alert("Logged in successfully");
   } catch (err) {
     console.error("Login error:", err.response?.data || err.message);
     alert(err.response?.data?.detail || "Login failed");
   }
+};
+
+const logout = () => {
+  localStorage.removeItem("token");
+  setToken("");
 };
 
   const createTask = async () => {
@@ -136,6 +144,7 @@ const login = async () => {
     }
   };
 
+
   return (
     <div className="page">
       <header className="hero">
@@ -143,18 +152,44 @@ const login = async () => {
           <h1>AddisTask</h1>
           <p>Smart local service marketplace for Addis Ababa</p>
         </div>
-        <span className={token ? "badge online" : "badge"}>
-          {token ? "Logged in" : "Not logged in"}
-        </span>
+        {token ? (
+  <button className="logout-btn" onClick={logout}>
+    Logout
+  </button>
+) : (
+  <span className="badge">
+    Not logged in
+  </span>
+)}
+
+        
       </header>
 
       <main className="grid">
-        <section className="card">
-          <h2>Login</h2>
-          <input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button onClick={login}>Login</button>
-        </section>
+<section className="card">
+  <h2>Login</h2>
+
+  <input
+    placeholder="Phone"
+    value={phone}
+    onChange={(e) => setPhone(e.target.value)}
+  />
+
+  <input
+    placeholder="Password"
+    type="password"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+  />
+
+  {!token ? (
+    <button onClick={login}>Login</button>
+  ) : (
+    <button className="logout-btn" onClick={logout}>
+      Logout
+    </button>
+  )}
+</section>
 
         <section className="card">
           <h2>Create Task</h2>
