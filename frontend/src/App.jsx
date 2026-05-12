@@ -7,6 +7,9 @@ const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 export default function App() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+
+  const [fullName, setFullName] = useState("");
+
   const [token, setToken] = useState(
   localStorage.getItem("token") || ""
   );
@@ -44,6 +47,20 @@ const login = async () => {
   } catch (err) {
     console.error("Login error:", err.response?.data || err.message);
     alert(err.response?.data?.detail || "Login failed");
+  }
+};
+
+const register = async () => {
+  try {
+    await axios.post(`${API}/api/auth/register`, {
+      full_name: fullName,
+      phone,
+      password,
+    });
+
+    alert("Registration successful. Now login.");
+  } catch (err) {
+    alert(err.response?.data?.detail || "Registration failed");
   }
 };
 
@@ -167,7 +184,13 @@ const logout = () => {
 
       <main className="grid">
 <section className="card">
-  <h2>Login</h2>
+  <h2>Account</h2>
+
+  <input
+    placeholder="Full name"
+    value={fullName}
+    onChange={(e) => setFullName(e.target.value)}
+  />
 
   <input
     placeholder="Phone"
@@ -183,7 +206,10 @@ const logout = () => {
   />
 
   {!token ? (
-    <button onClick={login}>Login</button>
+    <div className="auth-buttons">
+      <button onClick={login}>Login</button>
+      <button onClick={register}>Register</button>
+    </div>
   ) : (
     <button className="logout-btn" onClick={logout}>
       Logout

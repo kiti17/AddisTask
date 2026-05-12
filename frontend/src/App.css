@@ -161,3 +161,8 @@ button:hover {
 .logout-btn:hover {
   background: #dc2626;
 }
+
+.auth-buttons {
+  display: flex;
+  gap: 10px;
+}
