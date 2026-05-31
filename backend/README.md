@@ -1,6 +1,6 @@
 # AddisTask
 
-AddisTask is a Taskrabbit-style local services marketplace designed for Addis Ababa. Customers can post service tasks, providers can create service profiles, and the platform recommends matching providers using category, location, rating, completed task count, and response time.
+AddisTask is a local services marketplace designed for Addis Ababa. Customers can post service tasks, providers can create service profiles, and the platform recommends matching providers using category, location, rating, completed task count, and response time.
 
 ## Live Links
 
