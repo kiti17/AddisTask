@@ -4,6 +4,51 @@ AddisTask is a Taskrabbit-style local services marketplace designed for Addis Ab
 
 ## Live Links
 
+# Running AddisTask Locally
+
+## Backend (FastAPI)
+
+Start the backend server:
+
+```powershell
+cd backend
+python -m uvicorn app.main:app --reload
+```
+
+Backend API:
+
+```text
+http://127.0.0.1:8000
+```
+
+Swagger Documentation:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+---
+
+## Frontend (React + Vite)
+
+Start the frontend server:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend URL:
+
+```text
+http://localhost:5173
+```
+
+---
+
+# Production Deployment
+
 - Frontend: https://addistask-1.onrender.com
 - Backend API: https://addistask.onrender.com
 - API Docs: https://addistask.onrender.com/docs
