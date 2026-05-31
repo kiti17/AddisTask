@@ -11,7 +11,6 @@ export default function App() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
 
-  const [token, setToken] = useState(localStorage.getItem("token") || "");
 
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
@@ -26,6 +25,12 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [matches, setMatches] = useState([]);
   const [applications, setApplications] = useState([]);
+
+  const [token, setToken] = useState(localStorage.getItem("token") || "");
+
+  const [currentUser, setCurrentUser] = useState(
+  localStorage.getItem("currentUser") || ""
+  );
 
   const authHeader = { headers: { Authorization: `Bearer ${token}` } };
 
@@ -51,6 +56,9 @@ export default function App() {
 
       localStorage.setItem("token", res.data.access_token);
       setToken(res.data.access_token);
+
+      setCurrentUser(fullName || phone);
+      localStorage.setItem("currentUser", fullName || phone);
 
       setFullName("");
       setPhone("");
@@ -180,9 +188,33 @@ export default function App() {
     }
   };
 
-  const filteredTasks = tasks.filter((t) =>
-    t.category?.toLowerCase().includes(searchCategory.toLowerCase())
+  const filteredTasks = tasks.filter(
+    (t) =>
+      t.status?.toLowerCase().trim() !== "completed" &&
+      t.category?.toLowerCase().includes(searchCategory.toLowerCase())
   );
+
+  const completeTask = async (taskId) => {
+    try {
+      if (!token) return alert("Login first");
+
+      await axios.patch(
+        `${API}/api/tasks/${taskId}/complete`,
+        {},
+        authHeader
+      );
+
+      alert("Task completed");
+
+      setSelectedTask(null);
+      setMatches([]);
+      setApplications([]);
+
+      await loadTasks();
+    } catch (err) {
+      alert(err.response?.data?.detail || "Complete task failed");
+    }
+  };
 
   return (
     <div className="page">
@@ -194,11 +226,17 @@ export default function App() {
 
         <div className="top-actions">
           {token ? (
-            <button className="logout-btn" onClick={logout}>
-              Logout
-            </button>
+            <div className="user-info">
+              <span>Logged in as: {currentUser || "User"}</span>
+
+              <button className="logout-btn" onClick={logout}>
+                Logout
+              </button>
+            </div>
           ) : (
-            <button onClick={() => setView("account")}>Login / Register</button>
+            <button onClick={() => setView("account")}>
+              Login / Register
+            </button>
           )}
         </div>
       </header>
@@ -392,10 +430,18 @@ export default function App() {
 
                   <div className="actions">
                     <button onClick={() => loadMatches(t.id)}>Smart Match</button>
+
                     <button onClick={() => applyToTask(t.id)}>Apply</button>
+
                     <button onClick={() => loadApplications(t.id)}>
                       Applications
                     </button>
+
+                    {t.status?.toLowerCase().trim() === "assigned" && (
+                      <button onClick={() => completeTask(t.id)}>
+                        Complete
+                      </button>
+                  )}
                   </div>
                 </div>
               ))}

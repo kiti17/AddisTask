@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.models.task import Task
 from app.schemas.task import TaskCreate
 
+from fastapi import HTTPException
 from app.models.user import User
 from app.core.security import get_current_user
 
@@ -36,3 +37,33 @@ def create_task(
 @router.get("/")
 def get_tasks(db: Session = Depends(get_db)):
     return db.query(Task).all()
+
+
+@router.patch("/{task_id}/complete")
+def complete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.customer_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the task owner can complete this task"
+        )
+
+    if task.status != "assigned":
+        raise HTTPException(
+            status_code=400,
+            detail="Only assigned tasks can be completed"
+        )
+
+    task.status = "completed"
+    db.commit()
+    db.refresh(task)
+
+    return task

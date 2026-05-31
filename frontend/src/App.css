@@ -279,3 +279,11 @@ input {
     justify-content: flex-start;
   }
 }
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: white;
+  font-weight: 700;
+}
