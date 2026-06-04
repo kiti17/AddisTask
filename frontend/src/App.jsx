@@ -1,8 +1,7 @@
 import { useState } from "react";
-import axios from "axios";
 import "./App.css";
-
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+import { api } from "./services/api";
+import Hero from "./components/Hero";
 
 export default function App() {
   const [view, setView] = useState("home");
@@ -36,22 +35,24 @@ export default function App() {
 
   const register = async () => {
     try {
-      await axios.post(`${API}/api/auth/register`, {
+      await api.post("/api/auth/register", {
         full_name: fullName,
-        phone,
-        password,
+        phone: phone,
+        password: password,
       });
+
       alert("Registration successful. You can now login.");
     } catch (err) {
-      alert(err.response?.data?.detail || "Registration failed");
+      console.error("Register error:", err.response?.data);
+      alert(JSON.stringify(err.response?.data?.detail || "Registration failed"));
     }
   };
 
   const login = async () => {
     try {
-      const res = await axios.post(`${API}/api/auth/login`, {
-        phone,
-        password,
+      const res = await api.post("/api/auth/login", {
+        phone: phone,
+        password: password,
       });
 
       localStorage.setItem("token", res.data.access_token);
@@ -67,7 +68,8 @@ export default function App() {
       alert("Logged in successfully");
       setView("home");
     } catch (err) {
-      alert(err.response?.data?.detail || "Login failed");
+      console.error("Login error:", err.response?.data);
+      alert(JSON.stringify(err.response?.data?.detail || "Login failed"));
     }
   };
 
@@ -82,8 +84,8 @@ export default function App() {
     try {
       if (!token) return alert("Login first");
 
-      await axios.post(
-        `${API}/api/tasks/`,
+      await api.post(
+        "/api/tasks/",
         {
           title: taskTitle,
           description: "Customer task",
@@ -108,7 +110,7 @@ export default function App() {
     try {
       if (!token) return alert("Login first");
 
-      await axios.post(
+      await api.post(
         `${API}/api/providers/`,
         {
           business_name: providerName,
@@ -129,7 +131,7 @@ export default function App() {
 
   const loadTasks = async () => {
     try {
-      const res = await axios.get(`${API}/api/tasks/`);
+      const res = await api.get("/api/tasks/");
       setTasks(res.data);
     } catch {
       alert("Failed to load tasks");
@@ -139,7 +141,7 @@ export default function App() {
   const loadMatches = async (taskId) => {
     try {
       setSelectedTask(taskId);
-      const res = await axios.get(`${API}/api/providers/match/${taskId}`);
+      const res = await api.get(`${API}/api/providers/match/${taskId}`);
       setMatches(res.data);
     } catch {
       alert("Failed to load matches");
@@ -150,7 +152,7 @@ export default function App() {
     try {
       if (!token) return alert("Login first");
 
-      await axios.post(
+      await api.post(
         `${API}/api/applications/`,
         { task_id: taskId },
         authHeader
@@ -164,7 +166,7 @@ export default function App() {
 
   const loadApplications = async (taskId) => {
     try {
-      const res = await axios.get(`${API}/api/applications/task/${taskId}`);
+      const res = await api.get(`${API}/api/applications/task/${taskId}`);
       setApplications(res.data);
     } catch {
       alert("Failed to load applications");
@@ -175,7 +177,7 @@ export default function App() {
     try {
       if (!token) return alert("Login first");
 
-      await axios.patch(
+      await api.patch(
         `${API}/api/applications/${id}/status?status=accepted`,
         {},
         authHeader
@@ -198,7 +200,7 @@ export default function App() {
     try {
       if (!token) return alert("Login first");
 
-      await axios.patch(
+      await api.patch(
         `${API}/api/tasks/${taskId}/complete`,
         {},
         authHeader
@@ -218,28 +220,12 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="hero">
-        <div>
-          <h1>AddisTask</h1>
-          <p>Find trusted local help in Addis Ababa</p>
-        </div>
-
-        <div className="top-actions">
-          {token ? (
-            <div className="user-info">
-              <span>Logged in as: {currentUser || "User"}</span>
-
-              <button className="logout-btn" onClick={logout}>
-                Logout
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => setView("account")}>
-              Login / Register
-            </button>
-          )}
-        </div>
-      </header>
+      <Hero
+        token={token}
+        currentUser={currentUser}
+        logout={logout}
+        setView={setView}
+      />
 
       {view !== "home" && (
         <button className="back-btn" onClick={() => setView("home")}>
