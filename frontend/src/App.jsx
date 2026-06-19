@@ -3,6 +3,7 @@ import "./App.css";
 import { api } from "./services/api";
 import Hero from "./components/Hero";
 import Marketplace from "./components/Marketplace";
+import MatchedProviders from "./components/MatchedProviders";
 
 export default function App() {
   const [view, setView] = useState("home");
@@ -76,7 +77,11 @@ export default function App() {
 
   const logout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("currentUser");
+
     setToken("");
+    setCurrentUser("");
+
     alert("Logged out");
     setView("home");
   };
@@ -101,7 +106,7 @@ export default function App() {
       setTaskTitle("");
       setTaskCategory("");
       setTaskLocation("");
-      loadTasks();
+      //loadTasks();
     } catch (err) {
       alert(err.response?.data?.detail || "Task creation failed");
     }
@@ -112,7 +117,7 @@ export default function App() {
       if (!token) return alert("Login first");
 
       await api.post(
-        `${API}/api/providers/`,
+        "/api/providers/",
         {
           business_name: providerName,
           skill_category: providerCategory,
@@ -126,51 +131,64 @@ export default function App() {
       setProviderCategory("");
       setProviderCity("");
     } catch (err) {
-      alert(err.response?.data?.detail || "Provider creation failed");
-    }
-  };
-
-  const loadTasks = async () => {
-    try {
-      const res = await api.get("/api/tasks/");
-      setTasks(res.data);
-    } catch {
-      alert("Failed to load tasks");
+      console.error("Provider error:", err.response?.data || err.message);
+      alert(
+        JSON.stringify(
+          err.response?.data?.detail || err.response?.data || err.message
+        )
+      );
     }
   };
 
   const loadMatches = async (taskId) => {
     try {
       setSelectedTask(taskId);
-      const res = await api.get(`${API}/api/providers/match/${taskId}`);
+      const res = await api.get(`/api/providers/match/${taskId}`);
       setMatches(res.data);
-    } catch {
-      alert("Failed to load matches");
+    } catch (err) {
+      console.error("Match error:", err.response?.data || err.message);
+      alert(
+        JSON.stringify(
+          err.response?.data?.detail || err.response?.data || "Failed to load matches"
+        )
+      );
     }
   };
+
 
   const applyToTask = async (taskId) => {
     try {
       if (!token) return alert("Login first");
 
       await api.post(
-        `${API}/api/applications/`,
+        "/api/applications/",
         { task_id: taskId },
         authHeader
       );
 
       alert("Applied to task");
     } catch (err) {
-      alert(err.response?.data?.detail || "Apply failed");
+      console.error("Apply error:", err.response?.data);
+
+      alert(
+        JSON.stringify(
+          err.response?.data?.detail || err.response?.data || "Apply failed"
+        )
+      );
     }
   };
 
   const loadApplications = async (taskId) => {
     try {
-      const res = await api.get(`${API}/api/applications/task/${taskId}`);
+      const res = await api.get(`/api/applications/task/${taskId}`);
       setApplications(res.data);
-    } catch {
-      alert("Failed to load applications");
+    } catch (err) {
+      console.error("Applications error:", err.response?.data || err.message);
+      alert(
+        JSON.stringify(
+          err.response?.data?.detail || err.response?.data || "Failed to load applications"
+        )
+      );
     }
   };
 
@@ -179,15 +197,20 @@ export default function App() {
       if (!token) return alert("Login first");
 
       await api.patch(
-        `${API}/api/applications/${id}/status?status=accepted`,
+        `/api/applications/${id}/status?status=accepted`,
         {},
         authHeader
       );
 
       alert("Accepted");
-      loadTasks();
+      //loadTasks();
     } catch (err) {
-      alert(err.response?.data?.detail || "Accept failed");
+      console.error("Accept error:", err.response?.data || err.message);
+      alert(
+        JSON.stringify(
+          err.response?.data?.detail || err.response?.data || "Accept failed"
+        )
+      );
     }
   };
 
@@ -202,7 +225,7 @@ export default function App() {
       if (!token) return alert("Login first");
 
       await api.patch(
-        `${API}/api/tasks/${taskId}/complete`,
+        `/api/tasks/${taskId}/complete`,
         {},
         authHeader
       );
@@ -213,9 +236,14 @@ export default function App() {
       setMatches([]);
       setApplications([]);
 
-      await loadTasks();
+      //await loadTasks();
     } catch (err) {
-      alert(err.response?.data?.detail || "Complete task failed");
+      console.error("Complete task error:", err.response?.data || err.message);
+      alert(
+        JSON.stringify(
+          err.response?.data?.detail || err.response?.data || "Complete task failed"
+        )
+      );
     }
   };
 
@@ -274,7 +302,7 @@ export default function App() {
                       setProviderCategory(service);
                       setSearchCategory(service);
                       setView("marketplace");
-                      loadTasks();
+                      
                     }}
                   >
                     {service}
@@ -387,7 +415,7 @@ export default function App() {
       {view === "marketplace" && (
         <>
           <Marketplace
-            loadTasks={loadTasks}
+            
             searchCategory={searchCategory}
             setSearchCategory={setSearchCategory}
             filteredTasks={filteredTasks}
@@ -396,28 +424,11 @@ export default function App() {
             loadApplications={loadApplications}
             completeTask={completeTask}
           />
+          <MatchedProviders
+            selectedTask={selectedTask}
+            matches={matches}
+          />
 
-          {selectedTask && (
-            <section className="card wide">
-              <h2>Matched Providers for Task #{selectedTask}</h2>
-
-              <div className="list">
-                {matches.map((m) => (
-                  <div className="row" key={m.provider_id}>
-                    <div>
-                      <strong>{m.business_name}</strong>
-                      <p>{m.skill_category} • {m.city}</p>
-                      <p>⭐ Rating: {m.rating || 4.5}</p>
-                      <p>✔ Completed Tasks: {m.completed_tasks || 0}</p>
-                      <p>⏱ Response Time: {m.response_time_minutes || 30} min</p>
-                    </div>
-
-                    <span className="score">Score: {m.match_score}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
 
           <section className="card wide">
             <h2>Applications</h2>
