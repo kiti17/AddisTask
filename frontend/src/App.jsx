@@ -12,6 +12,10 @@ export default function App() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
 
+  const [token, setToken] = useState(sessionStorage.getItem("token") || "");
+  const [currentUser, setCurrentUser] = useState(
+    sessionStorage.getItem("currentUser") || ""
+  );
 
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
@@ -27,25 +31,18 @@ export default function App() {
   const [matches, setMatches] = useState([]);
   const [applications, setApplications] = useState([]);
 
-  const [token, setToken] = useState(localStorage.getItem("token") || "");
-
-  const [currentUser, setCurrentUser] = useState(
-  localStorage.getItem("currentUser") || ""
-  );
-
   const authHeader = { headers: { Authorization: `Bearer ${token}` } };
 
   const register = async () => {
     try {
       await api.post("/api/auth/register", {
         full_name: fullName,
-        phone: phone,
-        password: password,
+        phone,
+        password,
       });
 
       alert("Registration successful. You can now login.");
     } catch (err) {
-      console.error("Register error:", err.response?.data);
       alert(JSON.stringify(err.response?.data?.detail || "Registration failed"));
     }
   };
@@ -53,15 +50,15 @@ export default function App() {
   const login = async () => {
     try {
       const res = await api.post("/api/auth/login", {
-        phone: phone,
-        password: password,
+        phone,
+        password,
       });
 
-      localStorage.setItem("token", res.data.access_token);
-      setToken(res.data.access_token);
+      sessionStorage.setItem("token", res.data.access_token);
+      sessionStorage.setItem("currentUser", fullName || phone);
 
+      setToken(res.data.access_token);
       setCurrentUser(fullName || phone);
-      localStorage.setItem("currentUser", fullName || phone);
 
       setFullName("");
       setPhone("");
@@ -70,20 +67,28 @@ export default function App() {
       alert("Logged in successfully");
       setView("home");
     } catch (err) {
-      console.error("Login error:", err.response?.data);
       alert(JSON.stringify(err.response?.data?.detail || "Login failed"));
     }
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("currentUser");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("currentUser");
 
     setToken("");
     setCurrentUser("");
+    setView("home");
 
     alert("Logged out");
-    setView("home");
+  };
+
+  const loadTasks = async () => {
+    try {
+      const res = await api.get("/api/tasks/");
+      setTasks(res.data);
+    } catch (err) {
+      alert(JSON.stringify(err.response?.data?.detail || "Failed to load tasks"));
+    }
   };
 
   const createTask = async () => {
@@ -103,12 +108,15 @@ export default function App() {
       );
 
       alert("Task created");
+
       setTaskTitle("");
       setTaskCategory("");
       setTaskLocation("");
-      //loadTasks();
+
+      await loadTasks();
+      setView("marketplace");
     } catch (err) {
-      alert(err.response?.data?.detail || "Task creation failed");
+      alert(JSON.stringify(err.response?.data?.detail || "Task creation failed"));
     }
   };
 
@@ -127,16 +135,12 @@ export default function App() {
       );
 
       alert("Provider profile created");
+
       setProviderName("");
       setProviderCategory("");
       setProviderCity("");
     } catch (err) {
-      console.error("Provider error:", err.response?.data || err.message);
-      alert(
-        JSON.stringify(
-          err.response?.data?.detail || err.response?.data || err.message
-        )
-      );
+      alert(JSON.stringify(err.response?.data?.detail || "Provider creation failed"));
     }
   };
 
@@ -146,15 +150,9 @@ export default function App() {
       const res = await api.get(`/api/providers/match/${taskId}`);
       setMatches(res.data);
     } catch (err) {
-      console.error("Match error:", err.response?.data || err.message);
-      alert(
-        JSON.stringify(
-          err.response?.data?.detail || err.response?.data || "Failed to load matches"
-        )
-      );
+      alert(JSON.stringify(err.response?.data?.detail || "Failed to load matches"));
     }
   };
-
 
   const applyToTask = async (taskId) => {
     try {
@@ -168,13 +166,7 @@ export default function App() {
 
       alert("Applied to task");
     } catch (err) {
-      console.error("Apply error:", err.response?.data);
-
-      alert(
-        JSON.stringify(
-          err.response?.data?.detail || err.response?.data || "Apply failed"
-        )
-      );
+      alert(JSON.stringify(err.response?.data?.detail || "Apply failed"));
     }
   };
 
@@ -183,12 +175,7 @@ export default function App() {
       const res = await api.get(`/api/applications/task/${taskId}`);
       setApplications(res.data);
     } catch (err) {
-      console.error("Applications error:", err.response?.data || err.message);
-      alert(
-        JSON.stringify(
-          err.response?.data?.detail || err.response?.data || "Failed to load applications"
-        )
-      );
+      alert(JSON.stringify(err.response?.data?.detail || "Failed to load applications"));
     }
   };
 
@@ -203,22 +190,13 @@ export default function App() {
       );
 
       alert("Accepted");
-      //loadTasks();
+
+      setApplications([]);
+      await loadTasks();
     } catch (err) {
-      console.error("Accept error:", err.response?.data || err.message);
-      alert(
-        JSON.stringify(
-          err.response?.data?.detail || err.response?.data || "Accept failed"
-        )
-      );
+      alert(JSON.stringify(err.response?.data?.detail || "Accept failed"));
     }
   };
-
-  const filteredTasks = tasks.filter(
-    (t) =>
-      t.status?.toLowerCase().trim() !== "completed" &&
-      t.category?.toLowerCase().includes(searchCategory.toLowerCase())
-  );
 
   const completeTask = async (taskId) => {
     try {
@@ -236,16 +214,19 @@ export default function App() {
       setMatches([]);
       setApplications([]);
 
-      //await loadTasks();
+      await loadTasks();
     } catch (err) {
-      console.error("Complete task error:", err.response?.data || err.message);
-      alert(
-        JSON.stringify(
-          err.response?.data?.detail || err.response?.data || "Complete task failed"
-        )
-      );
+      alert(JSON.stringify(err.response?.data?.detail || "Complete task failed"));
     }
   };
+
+  const filteredTasks = tasks.filter((t) => {
+    const status = t.status?.toLowerCase().trim();
+    const category = t.category?.toLowerCase().trim() || "";
+    const search = searchCategory.toLowerCase().trim();
+
+    return status !== "completed" && category.includes(search);
+  });
 
   return (
     <div className="page">
@@ -281,7 +262,13 @@ export default function App() {
                 <small>Create your profile and apply to matching tasks.</small>
               </button>
 
-              <button className="choice-card" onClick={() => setView("marketplace")}>
+              <button
+                className="choice-card"
+                onClick={() => {
+                  setSearchCategory("");
+                  setView("marketplace");
+                }}
+              >
                 <span>🔎</span>
                 <strong>Browse marketplace</strong>
                 <small>View available tasks and provider matches.</small>
@@ -291,8 +278,9 @@ export default function App() {
 
           <section className="categories">
             <h2>Popular Services</h2>
+
             <div className="category-grid">
-              {["Cleaning", "Plumbing", "Electrical", "Moving", "Delivery", "Home Repair"].map(
+              {["Cleaning", "Plumbing", "Electrical", "Moving", "Delivery", "Home Repair", "Repair"].map(
                 (service) => (
                   <button
                     key={service}
@@ -302,7 +290,6 @@ export default function App() {
                       setProviderCategory(service);
                       setSearchCategory(service);
                       setView("marketplace");
-                      
                     }}
                   >
                     {service}
@@ -375,7 +362,13 @@ export default function App() {
 
           <button onClick={createTask}>Create Task</button>
 
-          <button className="secondary-btn" onClick={() => setView("marketplace")}>
+          <button
+            className="secondary-btn"
+            onClick={() => {
+              setSearchCategory("");
+              setView("marketplace");
+            }}
+          >
             View Marketplace
           </button>
         </section>
@@ -406,7 +399,13 @@ export default function App() {
 
           <button onClick={createProvider}>Create Provider Profile</button>
 
-          <button className="secondary-btn" onClick={() => setView("marketplace")}>
+          <button
+            className="secondary-btn"
+            onClick={() => {
+              setSearchCategory("");
+              setView("marketplace");
+            }}
+          >
             Browse Tasks
           </button>
         </section>
@@ -415,7 +414,7 @@ export default function App() {
       {view === "marketplace" && (
         <>
           <Marketplace
-            
+            loadTasks={loadTasks}
             searchCategory={searchCategory}
             setSearchCategory={setSearchCategory}
             filteredTasks={filteredTasks}
@@ -424,11 +423,11 @@ export default function App() {
             loadApplications={loadApplications}
             completeTask={completeTask}
           />
+
           <MatchedProviders
             selectedTask={selectedTask}
             matches={matches}
           />
-
 
           <section className="card wide">
             <h2>Applications</h2>
