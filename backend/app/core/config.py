@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "change-this-secret"
     JWT_ALG: str = "HS256"
     JWT_EXPIRES_MIN: int = 60
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
 
     class Config:
         env_file = ".env"

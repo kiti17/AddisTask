@@ -64,11 +64,62 @@ def apply_to_task(
     return new_application
 
 
+@router.get("/provider/me")
+def get_my_provider_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    provider = db.query(ProviderProfile).filter(
+        ProviderProfile.user_id == current_user.id
+    ).first()
+
+    if not provider:
+        raise HTTPException(
+            status_code=400,
+            detail="Create a provider profile before viewing applications"
+        )
+
+    applications = db.query(Application).filter(
+        Application.provider_id == provider.id
+    ).all()
+
+    result = []
+
+    for app in applications:
+        task = db.query(Task).filter(Task.id == app.task_id).first()
+
+        result.append({
+            "application_id": app.id,
+            "task_id": app.task_id,
+            "status": app.status,
+            "task_title": task.title if task else None,
+            "task_category": task.category if task else None,
+            "task_location": task.location if task else None,
+            "task_budget": task.budget if task else None,
+            "task_status": task.status if task else None,
+            "created_at": app.created_at
+        })
+
+    return result
+
+
 @router.get("/task/{task_id}")
 def get_applications_for_task(
     task_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.customer_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the task owner can view applications for this task"
+        )
+
     applications = db.query(Application).filter(
         Application.task_id == task_id
     ).all()
@@ -84,12 +135,18 @@ def get_applications_for_task(
             "application_id": app.id,
             "task_id": app.task_id,
             "status": app.status,
+            "provider_id": provider.id if provider else None,
             "business_name": provider.business_name if provider else None,
             "skill_category": provider.skill_category if provider else None,
-            "city": provider.city if provider else None
+            "city": provider.city if provider else None,
+            "rating": provider.rating if provider else None,
+            "completed_tasks": provider.completed_tasks if provider else None,
+            "response_time_minutes": provider.response_time_minutes if provider else None
         })
 
     return result
+
+
 @router.patch("/{application_id}/status")
 def update_application_status(
     application_id: int,
@@ -121,10 +178,24 @@ def update_application_status(
             detail="Status must be pending, accepted, or rejected"
         )
 
+    if status == "accepted" and task.status != "open":
+        raise HTTPException(
+            status_code=400,
+            detail="Only open tasks can accept a provider"
+        )
+
     application.status = status
 
     if status == "accepted":
         task.status = "assigned"
+        other_applications = db.query(Application).filter(
+            Application.task_id == application.task_id,
+            Application.id != application.id,
+            Application.status == "pending"
+        ).all()
+
+        for other_application in other_applications:
+            other_application.status = "rejected"
 
     db.commit()
     db.refresh(application)

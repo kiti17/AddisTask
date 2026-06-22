@@ -6,6 +6,8 @@ from app.models.task import Task
 from app.schemas.task import TaskCreate
 
 from fastapi import HTTPException
+from app.models.application import Application
+from app.models.provider import ProviderProfile
 from app.models.user import User
 from app.core.security import get_current_user
 
@@ -61,6 +63,19 @@ def complete_task(
             status_code=400,
             detail="Only assigned tasks can be completed"
         )
+
+    accepted_application = db.query(Application).filter(
+        Application.task_id == task.id,
+        Application.status == "accepted"
+    ).first()
+
+    if accepted_application:
+        provider = db.query(ProviderProfile).filter(
+            ProviderProfile.id == accepted_application.provider_id
+        ).first()
+
+        if provider:
+            provider.completed_tasks = (provider.completed_tasks or 0) + 1
 
     task.status = "completed"
     db.commit()

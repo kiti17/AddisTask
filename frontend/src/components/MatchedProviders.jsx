@@ -6,36 +6,38 @@ export default function MatchedProviders({
 
   return (
     <section className="card wide">
-      <h2>
-        Matched Providers for Task #{selectedTask}
-      </h2>
+      <div className="section-header">
+        <div>
+          <h2>Smart Matches</h2>
+          <p className="muted">
+            Ranked providers for task #{selectedTask} using skill, location, rating,
+            completed work, and response time.
+          </p>
+        </div>
+      </div>
 
       <div className="list">
+        {matches.length === 0 && (
+          <div className="empty-state">
+            No exact provider matches yet. Add providers in the same category and area.
+          </div>
+        )}
+
         {matches.map((m) => (
-          <div className="row" key={m.provider_id}>
+          <div className="row provider-row" key={m.provider_id}>
             <div>
               <strong>{m.business_name}</strong>
 
-              <p>
-                {m.skill_category} • {m.city}
-              </p>
+              <p>{m.skill_category} | {m.city}</p>
 
-              <p>
-                ⭐ Rating: {m.rating || 4.5}
-              </p>
-
-              <p>
-                ✔ Completed Tasks: {m.completed_tasks || 0}
-              </p>
-
-              <p>
-                ⏱ Response Time: {m.response_time_minutes || 30} min
-              </p>
+              <div className="trust-list compact">
+                <span>Rating: {m.rating || 4.5}</span>
+                <span>Completed: {m.completed_tasks || 0}</span>
+                <span>Response: {m.response_time_minutes || 30} min</span>
+              </div>
             </div>
 
-            <span className="score">
-              Score: {m.match_score}
-            </span>
+            <span className="score">Score: {m.match_score}</span>
           </div>
         ))}
       </div>

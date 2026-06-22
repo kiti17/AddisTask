@@ -1,16 +1,82 @@
-# React + Vite
+# AddisTask Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React frontend for AddisTask, a local services marketplace for Addis Ababa.
 
-Currently, two official plugins are available:
+Project overview:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```text
+../README.md
+```
 
-## React Compiler
+The frontend supports the main customer and provider workflows:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Customer account access.
+- Customer task posting.
+- Task details with category, Addis Ababa area, budget, urgency, preferred date, time window, and access notes.
+- Provider profile creation.
+- Marketplace task browsing and category filtering.
+- Smart provider matching.
+- Provider directory with trust signals.
+- Application review, acceptance, and rejection.
+- Assigned-task messaging.
+- Completed-task review submission.
 
-## Expanding the ESLint configuration
+## Local Development
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Install dependencies:
+
+```powershell
+npm install
+```
+
+Start the Vite dev server:
+
+```powershell
+npm run dev
+```
+
+The app runs at:
+
+```text
+http://localhost:5173
+```
+
+If the backend is running locally, the frontend uses:
+
+```text
+http://127.0.0.1:8000
+```
+
+For production, set:
+
+```text
+VITE_API_URL=https://addistask.onrender.com
+```
+
+## Quality Checks
+
+Run lint:
+
+```powershell
+npm run lint
+```
+
+Run a production build:
+
+```powershell
+npm run build
+```
+
+## Product Context
+
+See the product and startup strategy document:
+
+```text
+../docs/PRODUCT_STRATEGY.md
+```
+
+See the MSSE demo walkthrough:
+
+```text
+../docs/DEMO_SCRIPT.md
+```

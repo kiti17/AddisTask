@@ -6,9 +6,20 @@ export default function Hero({
 }) {
   return (
     <header className="hero">
-      <div>
+      <div className="hero-copy">
+        <p className="eyebrow light">TaskRabbit-inspired service booking for Addis Ababa</p>
         <h1>AddisTask</h1>
-        <p>Find trusted local help in Addis Ababa</p>
+        <p>
+          Post local tasks, match with trusted providers, and move work from
+          request to completion in one simple marketplace.
+        </p>
+
+        <div className="hero-actions">
+          <button onClick={() => setView("customer")}>Post a Task</button>
+          <button className="secondary-btn hero-secondary" onClick={() => setView("marketplace")}>
+            Browse Marketplace
+          </button>
+        </div>
       </div>
 
       <div className="top-actions">
@@ -27,7 +38,7 @@ export default function Hero({
           </div>
         ) : (
           <button onClick={() => setView("account")}>
-            Login / Register
+            Login
           </button>
         )}
       </div>
