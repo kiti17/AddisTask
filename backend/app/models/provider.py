@@ -13,6 +13,13 @@ class ProviderProfile(Base):
     skill_category = Column(String(80), nullable=False)
     city = Column(String(80), nullable=False, default="Addis Ababa")
     approval_status = Column(String(30), nullable=False, default="pending")
+    bio = Column(String(500), nullable=True)
+    experience_years = Column(Integer, nullable=False, default=0)
+    service_area = Column(String(200), nullable=True)
+    availability = Column(String(120), nullable=True)
+    contact_phone = Column(String(30), nullable=True)
+    id_verification_status = Column(String(30), nullable=False, default="not_submitted")
+    admin_notes = Column(String(500), nullable=True)
 
     rating = Column(Float, default=0.0)
     completed_tasks = Column(Integer, default=0)

@@ -88,11 +88,18 @@ def create_provider(provider_token: str):
             "business_name": "Workflow Test Cleaning",
             "skill_category": "Cleaning",
             "city": "Bole",
+            "bio": "Experienced cleaner for apartments and small offices.",
+            "experience_years": 3,
+            "service_area": "Bole, CMC",
+            "availability": "Weekdays and weekends",
+            "contact_phone": "0912345678",
         },
     )
     assert response.status_code == 200
     body = response.json()
     assert body["approval_status"] == "pending"
+    assert body["experience_years"] == 3
+    assert body["id_verification_status"] == "submitted"
     return body
 
 
@@ -145,11 +152,16 @@ def test_pending_provider_cannot_apply_until_admin_approves():
     assert pending_apply_response.status_code == 403
 
     approval_response = client.patch(
-        f"/api/providers/{provider['id']}/approval?status=approved",
+        f"/api/providers/{provider['id']}/approval",
         headers=auth_headers(admin["token"]),
+        json={
+            "status": "approved",
+            "admin_notes": "Profile has enough trust details for approval.",
+        },
     )
     assert approval_response.status_code == 200
     assert approval_response.json()["approval_status"] == "approved"
+    assert approval_response.json()["admin_notes"] == "Profile has enough trust details for approval."
 
     apply_response = client.post(
         "/api/applications/",
@@ -158,6 +170,47 @@ def test_pending_provider_cannot_apply_until_admin_approves():
     )
     assert apply_response.status_code == 200
     assert apply_response.json()["status"] == "pending"
+
+
+def test_rejected_provider_can_resubmit_profile_for_review():
+    provider_user = register_and_login("Provider Resubmit Flow", "0961")
+    admin = register_and_login("Admin Resubmit Flow", "0962")
+    promote_user_to_admin(admin["user_id"])
+
+    provider = create_provider(provider_user["token"])
+
+    rejection_response = client.patch(
+        f"/api/providers/{provider['id']}/approval",
+        headers=auth_headers(admin["token"]),
+        json={
+            "status": "rejected",
+            "admin_notes": "Please add a stronger service area and contact details.",
+        },
+    )
+    assert rejection_response.status_code == 200
+    assert rejection_response.json()["approval_status"] == "rejected"
+
+    resubmit_response = client.patch(
+        "/api/providers/me",
+        headers=auth_headers(provider_user["token"]),
+        json={
+            "business_name": "Workflow Test Cleaning Updated",
+            "skill_category": "Cleaning",
+            "city": "Bole",
+            "bio": "Updated profile with more detail and customer references.",
+            "experience_years": 5,
+            "service_area": "Bole, CMC, Megenagna",
+            "availability": "Weekdays, weekends, and evenings",
+            "contact_phone": "0912999999",
+        },
+    )
+
+    assert resubmit_response.status_code == 200
+    body = resubmit_response.json()
+    assert body["approval_status"] == "pending"
+    assert body["admin_notes"] is None
+    assert body["business_name"] == "Workflow Test Cleaning Updated"
+    assert body["experience_years"] == 5
 
 
 def test_customer_accepts_application_and_task_becomes_assigned():
