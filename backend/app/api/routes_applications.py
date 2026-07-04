@@ -29,10 +29,28 @@ def apply_to_task(
             detail="You must create a provider profile before applying to tasks"
         )
 
+    if provider.approval_status != "approved":
+        raise HTTPException(
+            status_code=403,
+            detail="Your provider profile must be approved before you can apply to tasks"
+        )
+
     task = db.query(Task).filter(Task.id == application.task_id).first()
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.customer_id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot apply to your own task"
+        )
+
+    if task.status != "open":
+        raise HTTPException(
+            status_code=400,
+            detail="Providers can only apply to open tasks"
+        )
 
     if provider.skill_category.lower() != task.category.lower():
         raise HTTPException(
@@ -62,6 +80,48 @@ def apply_to_task(
     db.refresh(new_application)
 
     return new_application
+
+
+@router.get("/customer/me")
+def get_my_customer_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    tasks = db.query(Task).filter(Task.customer_id == current_user.id).all()
+    task_ids = [task.id for task in tasks]
+
+    if not task_ids:
+        return []
+
+    applications = db.query(Application).filter(
+        Application.task_id.in_(task_ids)
+    ).all()
+
+    result = []
+
+    for app in applications:
+        task = next((item for item in tasks if item.id == app.task_id), None)
+        provider = db.query(ProviderProfile).filter(
+            ProviderProfile.id == app.provider_id
+        ).first()
+
+        result.append({
+            "application_id": app.id,
+            "task_id": app.task_id,
+            "status": app.status,
+            "task_title": task.title if task else None,
+            "task_status": task.status if task else None,
+            "provider_id": provider.id if provider else None,
+            "business_name": provider.business_name if provider else None,
+            "skill_category": provider.skill_category if provider else None,
+            "city": provider.city if provider else None,
+            "rating": provider.rating if provider else None,
+            "completed_tasks": provider.completed_tasks if provider else None,
+            "response_time_minutes": provider.response_time_minutes if provider else None,
+            "created_at": app.created_at
+        })
+
+    return result
 
 
 @router.get("/provider/me")

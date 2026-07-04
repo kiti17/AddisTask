@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 import { api } from "./services/api";
 import Hero from "./components/Hero";
 import Marketplace from "./components/Marketplace";
 import MatchedProviders from "./components/MatchedProviders";
+import serviceMosaic from "./assets/service-mosaic.jpg";
 
 const serviceCategories = [
   "Cleaning",
@@ -189,6 +190,15 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(
     sessionStorage.getItem("currentUser") || ""
   );
+  const [currentUserId, setCurrentUserId] = useState(
+    Number(sessionStorage.getItem("currentUserId") || 0)
+  );
+  const [currentUserRole, setCurrentUserRole] = useState(
+    sessionStorage.getItem("currentUserRole") || "customer"
+  );
+  const [activeMode, setActiveMode] = useState(
+    sessionStorage.getItem("activeMode") || "customer"
+  );
 
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
@@ -211,8 +221,15 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [matches, setMatches] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [applicationsTask, setApplicationsTask] = useState(null);
+  const [applicationsError, setApplicationsError] = useState("");
+  const [customerApplications, setCustomerApplications] = useState([]);
   const [providerApplications, setProviderApplications] = useState([]);
+  const [providerActivityLoadedAt, setProviderActivityLoadedAt] = useState("");
   const [providers, setProviders] = useState([]);
+  const [myProviderProfile, setMyProviderProfile] = useState(null);
+  const [verificationQueue, setVerificationQueue] = useState([]);
+  const [marketplaceSyncedAt, setMarketplaceSyncedAt] = useState("");
   const [savedProviders, setSavedProviders] = useState([]);
   const [reviewTaskId, setReviewTaskId] = useState("");
   const [reviewRating, setReviewRating] = useState("5");
@@ -222,6 +239,7 @@ export default function App() {
   const [taskMessages, setTaskMessages] = useState([]);
 
   const authHeader = { headers: { Authorization: `Bearer ${token}` } };
+  const isAdmin = currentUserRole === "admin";
 
   const getErrorMessage = (err, fallback) => {
     const detail = err.response?.data?.detail;
@@ -232,6 +250,42 @@ export default function App() {
 
     return detail || fallback;
   };
+
+  const getRefreshTime = () =>
+    new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  useEffect(() => {
+    const loadCurrentSessionUser = async () => {
+      if (!token) return;
+
+      try {
+        const res = await api.get(
+          "/api/auth/me",
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        sessionStorage.setItem("currentUser", res.data.full_name || res.data.phone);
+        sessionStorage.setItem("currentUserId", String(res.data.user_id || 0));
+        sessionStorage.setItem("currentUserRole", res.data.role || "customer");
+        setCurrentUser(res.data.full_name || res.data.phone);
+        setCurrentUserId(Number(res.data.user_id || 0));
+        setCurrentUserRole(res.data.role || "customer");
+      } catch {
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("currentUser");
+        sessionStorage.removeItem("currentUserId");
+        sessionStorage.removeItem("currentUserRole");
+        setToken("");
+        setCurrentUser("");
+        setCurrentUserId(0);
+        setCurrentUserRole("customer");
+      }
+    };
+
+    loadCurrentSessionUser();
+  }, [token]);
 
   const register = async () => {
     try {
@@ -262,17 +316,26 @@ export default function App() {
       });
 
       sessionStorage.setItem("token", res.data.access_token);
-      sessionStorage.setItem("currentUser", fullName || phone);
+      sessionStorage.setItem("currentUser", res.data.full_name || fullName || phone);
+      sessionStorage.setItem("currentUserId", String(res.data.user_id || 0));
+      const nextRole = res.data.role || "customer";
+      const nextMode = nextRole === "admin" ? "admin" : "customer";
+
+      sessionStorage.setItem("currentUserRole", nextRole);
+      sessionStorage.setItem("activeMode", nextMode);
 
       setToken(res.data.access_token);
-      setCurrentUser(fullName || phone);
+      setCurrentUser(res.data.full_name || fullName || phone);
+      setCurrentUserId(Number(res.data.user_id || 0));
+      setCurrentUserRole(nextRole);
+      setActiveMode(nextMode);
 
       setFullName("");
       setPhone("");
       setPassword("");
 
       alert("Logged in successfully");
-      setView("home");
+      setView(nextMode === "admin" ? "marketplace" : "home");
     } catch (err) {
       alert(getErrorMessage(err, "Login failed"));
     }
@@ -281,9 +344,15 @@ export default function App() {
   const logout = () => {
     sessionStorage.removeItem("token");
     sessionStorage.removeItem("currentUser");
+    sessionStorage.removeItem("currentUserId");
+    sessionStorage.removeItem("currentUserRole");
+    sessionStorage.removeItem("activeMode");
 
     setToken("");
     setCurrentUser("");
+    setCurrentUserId(0);
+    setCurrentUserRole("customer");
+    setActiveMode("customer");
     setView("home");
 
     alert("Logged out");
@@ -307,8 +376,136 @@ export default function App() {
     }
   };
 
+  const loadMyProviderProfile = async ({ silent = false } = {}) => {
+    try {
+      if (!token) {
+        if (silent) return;
+        setView("account");
+        return alert("Login first to view provider verification status.");
+      }
+
+      const res = await api.get("/api/providers/me", authHeader);
+      setMyProviderProfile(res.data);
+    } catch (err) {
+      setMyProviderProfile(null);
+      if (silent) return;
+      alert(getErrorMessage(err, "No provider profile found yet"));
+    }
+  };
+
+  const loadVerificationQueue = async ({ silent = false } = {}) => {
+    try {
+      if (!token) {
+        if (silent) return;
+        setView("account");
+        return alert("Login first to review provider verification.");
+      }
+
+      if (!isAdmin) {
+        setVerificationQueue([]);
+        if (silent) return;
+        return alert("Admin access is required to review provider verification.");
+      }
+
+      const res = await api.get("/api/providers/verification-queue", authHeader);
+      setVerificationQueue(res.data);
+    } catch (err) {
+      if (silent) return;
+      alert(getErrorMessage(err, "Failed to load verification queue"));
+    }
+  };
+
+  const loadCustomerApplications = async ({ silent = false } = {}) => {
+    try {
+      if (!token) {
+        if (silent) return;
+        setView("account");
+        return alert("Login first to view customer notifications.");
+      }
+
+      const res = await api.get("/api/applications/customer/me", authHeader);
+      setCustomerApplications(res.data);
+    } catch (err) {
+      if (silent) return;
+      alert(getErrorMessage(err, "Failed to load customer notifications"));
+    }
+  };
+
+  const refreshNotifications = async () => {
+    if (!token) {
+      setView("account");
+      return alert("Login first to refresh notifications.");
+    }
+
+    if (activeMode === "customer") {
+      await loadCustomerApplications();
+      setMarketplaceSyncedAt(getRefreshTime());
+      return;
+    }
+
+    if (activeMode === "admin") {
+      await Promise.all([
+        loadTasks(),
+        loadProviders(),
+        loadVerificationQueue(),
+      ]);
+      setMarketplaceSyncedAt(getRefreshTime());
+      return;
+    }
+
+    await Promise.all([
+      loadProviderApplications(),
+      loadMyProviderProfile(),
+    ]);
+    setMarketplaceSyncedAt(getRefreshTime());
+  };
+
+  const updateProviderApproval = async (providerId, status) => {
+    try {
+      if (!token) {
+        setView("account");
+        return alert("Login first to update provider approval.");
+      }
+
+      if (!isAdmin) {
+        return alert("Admin access is required to approve or reject providers.");
+      }
+
+      await api.patch(
+        `/api/providers/${providerId}/approval?status=${status}`,
+        {},
+        authHeader
+      );
+
+      alert(`Provider marked ${status}.`);
+      await Promise.all([loadProviders(), loadVerificationQueue()]);
+
+      if (myProviderProfile?.id === providerId) {
+        await loadMyProviderProfile();
+      }
+    } catch (err) {
+      alert(getErrorMessage(err, "Provider approval update failed"));
+    }
+  };
+
   const refreshMarketplace = async () => {
     await Promise.all([loadTasks(), loadProviders()]);
+    setMarketplaceSyncedAt(getRefreshTime());
+  };
+
+  const changeActiveMode = (mode) => {
+    sessionStorage.setItem("activeMode", mode);
+    setActiveMode(mode);
+    setApplicationsError("");
+
+    if (mode === "admin" && isAdmin) {
+      setView("marketplace");
+      Promise.all([
+        loadTasks(),
+        loadProviders(),
+        loadVerificationQueue({ silent: true }),
+      ]).then(() => setMarketplaceSyncedAt(getRefreshTime()));
+    }
   };
 
   const loadDemoData = () => {
@@ -319,7 +516,13 @@ export default function App() {
     setMaxBudget("");
     setMatches([]);
     setApplications([]);
+    setApplicationsTask(null);
+    setApplicationsError("");
+    setCustomerApplications([]);
     setProviderApplications([]);
+    setProviderActivityLoadedAt("");
+    setMyProviderProfile(null);
+    setVerificationQueue([]);
     setTaskMessages([]);
     setSelectedTask(null);
     alert("Demo marketplace data loaded.");
@@ -330,7 +533,13 @@ export default function App() {
     setProviders((current) => current.filter((provider) => provider.id > 0));
     setMatches([]);
     setApplications([]);
+    setApplicationsTask(null);
+    setApplicationsError("");
+    setCustomerApplications([]);
     setProviderApplications([]);
+    setProviderActivityLoadedAt("");
+    setMyProviderProfile(null);
+    setVerificationQueue([]);
     setTaskMessages([]);
     setSelectedTask(null);
     alert("Demo data cleared from this browser session.");
@@ -357,6 +566,10 @@ export default function App() {
       if (!token) {
         setView("account");
         return alert("Login first so providers know who posted the task.");
+      }
+
+      if (activeMode !== "customer") {
+        return alert("Switch to Customer Mode before posting a task.");
       }
 
       await api.post(
@@ -388,6 +601,7 @@ export default function App() {
       setTaskAccessNotes("");
 
       await loadTasks();
+      await loadCustomerApplications();
       setView("marketplace");
     } catch (err) {
       alert(JSON.stringify(err.response?.data?.detail || "Task creation failed"));
@@ -401,6 +615,10 @@ export default function App() {
         return alert("Login first to create a provider profile.");
       }
 
+      if (activeMode !== "provider") {
+        return alert("Switch to Provider Mode before creating a provider profile.");
+      }
+
       await api.post(
         "/api/providers/",
         {
@@ -411,12 +629,13 @@ export default function App() {
         authHeader
       );
 
-      alert("Provider profile created. You can now apply to tasks.");
+      alert("Provider profile submitted for approval. Apply after the profile is approved.");
 
       setProviderName("");
 
       await loadTasks();
       await loadProviders();
+      await loadMyProviderProfile();
       setView("marketplace");
     } catch (err) {
       alert(JSON.stringify(err.response?.data?.detail || "Provider creation failed"));
@@ -457,25 +676,38 @@ export default function App() {
     }
   };
 
-  const applyToTask = async (taskId) => {
-    try {
-      if (taskId < 0) {
-        const task = demoTasks.find((item) => item.id === taskId);
+  const applyToTask = async (taskOrId) => {
+    const task = typeof taskOrId === "object"
+      ? taskOrId
+      : tasks.find((item) => item.id === taskOrId);
+    const taskId = typeof taskOrId === "object" ? taskOrId.id : taskOrId;
 
-        if (task) {
+    try {
+      if (activeMode !== "provider") {
+        return alert("Switch to Provider Mode before applying to tasks.");
+      }
+
+      if (taskId < 0) {
+        const demoTask = task || demoTasks.find((item) => item.id === taskId);
+
+        if (demoTask) {
           setProviderApplications((current) => [
             {
               application_id: -401,
-              task_id: task.id,
-              status: task.status === "assigned" ? "accepted" : "pending",
-              task_title: task.title,
-              task_category: task.category,
-              task_location: task.location,
-              task_budget: task.budget,
-              task_status: task.status,
+              task_id: demoTask.id,
+              status: demoTask.status === "assigned" ? "accepted" : "pending",
+              task_title: demoTask.title,
+              task_category: demoTask.category,
+              task_location: demoTask.location,
+              task_budget: demoTask.budget,
+              task_status: demoTask.status,
             },
-            ...current.filter((application) => application.task_id !== task.id),
+            ...current.filter((application) => application.task_id !== demoTask.id),
           ]);
+          setProviderActivityLoadedAt(new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }));
         }
 
         return alert("Demo application added to Provider Activity.");
@@ -484,6 +716,19 @@ export default function App() {
       if (!token) {
         setView("account");
         return alert("Login first to apply as a provider.");
+      }
+
+      if (task?.customer_id === currentUserId) {
+        return alert("You cannot apply to your own task. Switch to Customer Mode to review applications.");
+      }
+
+      if (!myProviderProfile) {
+        await loadMyProviderProfile();
+        return alert("Provider profile status loaded. Apply again after confirming it is approved.");
+      }
+
+      if (myProviderProfile.approval_status !== "approved") {
+        return alert("Your provider profile must be approved before you can apply to tasks.");
       }
 
       await api.post("/api/applications/", { task_id: taskId }, authHeader);
@@ -495,22 +740,102 @@ export default function App() {
     }
   };
 
-  const loadProviderApplications = async () => {
+  const loadProviderApplications = async ({ silent = false } = {}) => {
     try {
       if (!token) {
+        if (silent) return;
         setView("account");
         return alert("Login first to view provider activity.");
       }
 
+      if (activeMode !== "provider") {
+        if (silent) return;
+        return alert("Switch to Provider Mode to view provider activity.");
+      }
+
       const res = await api.get("/api/applications/provider/me", authHeader);
       setProviderApplications(res.data);
+      setProviderActivityLoadedAt(getRefreshTime());
     } catch (err) {
+      if (silent) return;
       alert(getErrorMessage(err, "Failed to load provider activity"));
     }
   };
 
-  const loadApplications = async (taskId) => {
+  useEffect(() => {
+    if (!token) return undefined;
+
+    const loadMarketplaceContext = async () => {
+      const requestConfig = {
+        headers: { Authorization: `Bearer ${token}` },
+      };
+
+      try {
+        const [tasksResponse, providersResponse] = await Promise.all([
+          api.get("/api/tasks/"),
+          api.get("/api/providers/"),
+        ]);
+
+        setTasks(tasksResponse.data);
+        setProviders(providersResponse.data);
+
+        if (activeMode === "customer") {
+          const applicationsResponse = await api.get(
+            "/api/applications/customer/me",
+            requestConfig
+          );
+          setCustomerApplications(applicationsResponse.data);
+        }
+
+        if (activeMode === "provider") {
+          const [profileResult, applicationsResult] = await Promise.allSettled([
+            api.get("/api/providers/me", requestConfig),
+            api.get("/api/applications/provider/me", requestConfig),
+          ]);
+
+          if (profileResult.status === "fulfilled") {
+            setMyProviderProfile(profileResult.value.data);
+          } else {
+            setMyProviderProfile(null);
+          }
+
+          if (applicationsResult.status === "fulfilled") {
+            setProviderApplications(applicationsResult.value.data);
+            setProviderActivityLoadedAt(getRefreshTime());
+          }
+        }
+
+        if (activeMode === "admin" && isAdmin) {
+          const queueResponse = await api.get(
+            "/api/providers/verification-queue",
+            requestConfig
+          );
+          setVerificationQueue(queueResponse.data);
+        }
+
+        setMarketplaceSyncedAt(getRefreshTime());
+      } catch {
+        // Background refresh stays quiet so users are not interrupted while working.
+      }
+    };
+
+    loadMarketplaceContext();
+    const intervalId = window.setInterval(loadMarketplaceContext, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [token, activeMode, isAdmin]);
+
+  const loadApplications = async (taskOrId) => {
+    const taskId = typeof taskOrId === "object" ? taskOrId.id : taskOrId;
+
     try {
+      setApplicationsError("");
+      setApplicationsTask(
+        typeof taskOrId === "object"
+          ? taskOrId
+          : tasks.find((task) => task.id === taskId) || null
+      );
+
       if (taskId < 0) {
         const task = demoTasks.find((item) => item.id === taskId);
         const applicant = demoProviders.find(
@@ -543,10 +868,21 @@ export default function App() {
         return alert("Login first to review task applications.");
       }
 
+      if (activeMode !== "customer") {
+        return alert("Switch to Customer Mode to review applications.");
+      }
+
       const res = await api.get(`/api/applications/task/${taskId}`, authHeader);
       setApplications(res.data);
+      await loadCustomerApplications();
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Failed to load applications"));
+      const message = getErrorMessage(
+        err,
+        "Failed to load applications. Make sure you are logged in as the customer who posted this task."
+      );
+      setApplications([]);
+      setApplicationsError(message);
+      alert(message);
     }
   };
 
@@ -595,6 +931,7 @@ export default function App() {
         )
       );
       await loadTasks();
+      await loadCustomerApplications();
     } catch (err) {
       alert(JSON.stringify(err.response?.data?.detail || "Application update failed"));
     }
@@ -623,8 +960,10 @@ export default function App() {
       setSelectedTask(null);
       setMatches([]);
       setApplications([]);
+      setApplicationsTask(null);
 
       await loadTasks();
+      await loadCustomerApplications();
     } catch (err) {
       alert(JSON.stringify(err.response?.data?.detail || "Complete task failed"));
     }
@@ -731,6 +1070,12 @@ export default function App() {
   const assignedTasks = tasks.filter((t) => t.status === "assigned").length;
   const completedTasks = tasks.filter((t) => t.status === "completed");
   const activeAssignedTasks = tasks.filter((t) => t.status === "assigned");
+  const myAssignedTasks = tasks.filter(
+    (task) => task.customer_id === currentUserId && task.status === "assigned"
+  );
+  const myCompletedTasks = tasks.filter(
+    (task) => task.customer_id === currentUserId && task.status === "completed"
+  );
   const selectedGuidance = serviceGuidance[taskCategory] || serviceGuidance.Cleaning;
   const taskBudgetValue = Number(taskBudget || 0);
   const estimatedServiceFee = Math.round(taskBudgetValue * PLATFORM_FEE_RATE);
@@ -743,6 +1088,189 @@ export default function App() {
 
     return service.includes(search) && city.includes(area);
   });
+  const approvedProviders = providers.filter(
+    (provider) => provider.approval_status === "approved"
+  );
+  const pendingProviders = providers.filter(
+    (provider) => provider.approval_status === "pending"
+  );
+  const myProviderApprovalStatus = myProviderProfile?.approval_status || "not submitted";
+  const acceptedProviderApplications = providerApplications.filter(
+    (application) => application.status === "accepted"
+  );
+  const pendingProviderApplications = providerApplications.filter(
+    (application) => application.status === "pending"
+  );
+  const rejectedProviderApplications = providerApplications.filter(
+    (application) => application.status === "rejected"
+  );
+  const pendingCustomerApplications = customerApplications.filter(
+    (application) => application.status === "pending"
+  );
+  const customerNotifications = [
+    {
+      id: "customer-applications",
+      count: pendingCustomerApplications.length,
+      title: "Applications waiting",
+      text: pendingCustomerApplications.length
+        ? "Review provider applications and accept the best fit."
+        : "No provider applications waiting right now.",
+      action: "Review Applications",
+    },
+    {
+      id: "customer-assigned",
+      count: myAssignedTasks.length,
+      title: "Assigned tasks",
+      text: myAssignedTasks.length
+        ? "Coordinate with accepted providers and complete finished work."
+        : "No assigned tasks waiting for completion.",
+      action: "View Tasks",
+    },
+    {
+      id: "customer-reviews",
+      count: myCompletedTasks.length,
+      title: "Reviews ready",
+      text: myCompletedTasks.length
+        ? "Submit reviews for completed jobs to improve trust."
+        : "No completed tasks waiting for review.",
+      action: "Review Jobs",
+    },
+  ];
+  const providerNotifications = [
+    {
+      id: "provider-approval",
+      count: myProviderApprovalStatus === "approved" ? 0 : 1,
+      title: "Provider approval",
+      text:
+        myProviderApprovalStatus === "approved"
+          ? "Your provider profile is approved and ready for applications."
+          : `Current status: ${myProviderApprovalStatus}. Approval is required before applying.`,
+      action: "Check Status",
+    },
+    {
+      id: "provider-accepted",
+      count: acceptedProviderApplications.length,
+      title: "Accepted applications",
+      text: acceptedProviderApplications.length
+        ? "Customers accepted one or more of your applications."
+        : "No accepted applications yet.",
+      action: "View Activity",
+    },
+    {
+      id: "provider-pending",
+      count: pendingProviderApplications.length,
+      title: "Pending applications",
+      text: pendingProviderApplications.length
+        ? "These applications are still waiting for customer review."
+        : "No pending applications right now.",
+      action: "View Activity",
+    },
+  ];
+  const adminNotifications = [
+    {
+      id: "admin-verification",
+      count: pendingProviders.length,
+      title: "Providers waiting",
+      text: pendingProviders.length
+        ? "Review new provider profiles before they can apply to customer tasks."
+        : "No provider profiles are waiting for approval.",
+      action: "Load Queue",
+    },
+    {
+      id: "admin-supply",
+      count: approvedProviders.length,
+      title: "Approved supply",
+      text: approvedProviders.length
+        ? "Approved providers are visible and eligible for customer tasks."
+        : "No approved providers yet.",
+      action: "Refresh Providers",
+    },
+    {
+      id: "admin-open-tasks",
+      count: openTasks,
+      title: "Open customer requests",
+      text: openTasks
+        ? "These customer tasks still need provider applications."
+        : "No open customer requests right now.",
+      action: "Refresh Tasks",
+    },
+  ];
+  const activeNotifications =
+    activeMode === "admin"
+      ? adminNotifications
+      : activeMode === "customer"
+        ? customerNotifications
+        : providerNotifications;
+  const activeNotificationCount = activeNotifications.reduce(
+    (sum, notification) => sum + notification.count,
+    0
+  );
+  const activeModeLabel =
+    activeMode === "admin"
+      ? "Admin Mode"
+      : activeMode === "customer"
+        ? "Customer Mode"
+        : "Provider Mode";
+  const notificationDescription =
+    activeMode === "admin"
+      ? "Admin alerts for provider approval, marketplace supply, and open demand."
+      : activeMode === "customer"
+        ? "Customer alerts for applications, assigned work, and reviews."
+        : "Provider alerts for approval, applications, and accepted work.";
+  const globalNotificationCount =
+    activeMode === "admin"
+      ? pendingProviders.length
+      : activeMode === "customer"
+        ? pendingCustomerApplications.length + myAssignedTasks.length + myCompletedTasks.length
+        : (myProviderApprovalStatus === "approved" ? 0 : 1) +
+          acceptedProviderApplications.length +
+          pendingProviderApplications.length;
+  const globalNotificationText =
+    activeMode === "admin"
+      ? pendingProviders.length
+        ? `${pendingProviders.length} provider profile${pendingProviders.length === 1 ? "" : "s"} waiting approval`
+        : "No provider approvals waiting"
+      : activeMode === "customer"
+        ? globalNotificationCount
+          ? `${globalNotificationCount} customer action${globalNotificationCount === 1 ? "" : "s"} waiting`
+          : "No customer actions waiting"
+        : globalNotificationCount
+          ? `${globalNotificationCount} provider update${globalNotificationCount === 1 ? "" : "s"} waiting`
+          : "No provider updates waiting";
+  const runNotificationAction = (notificationId) => {
+    if (notificationId === "admin-verification") {
+      loadVerificationQueue();
+      return;
+    }
+
+    if (notificationId === "admin-supply") {
+      loadProviders();
+      return;
+    }
+
+    if (notificationId === "admin-open-tasks") {
+      loadTasks();
+      return;
+    }
+
+    if (activeMode === "customer") {
+      loadCustomerApplications();
+      return;
+    }
+
+    refreshNotifications();
+  };
+  const getProviderApplicationNotice = (status) => {
+    if (status === "accepted") {
+      return "Customer accepted your application. The task is assigned to you.";
+    }
+
+    if (status === "rejected") {
+      return "Customer did not select this application.";
+    }
+
+    return "Waiting for the customer to review your application.";
+  };
   const marketplaceCompletionRate = tasks.length
     ? Math.round((completedTasks.length / tasks.length) * 100)
     : 0;
@@ -794,7 +1322,47 @@ export default function App() {
         currentUser={currentUser}
         logout={logout}
         setView={setView}
+        activeMode={activeMode}
+        setActiveMode={changeActiveMode}
+        currentUserRole={currentUserRole}
+        notificationCount={globalNotificationCount}
+        notificationText={globalNotificationText}
+        notificationUpdatedAt={marketplaceSyncedAt}
+        setSearchCategory={setSearchCategory}
       />
+
+      {token && (
+        <section className="mode-panel">
+          <div>
+            <span className="mode-label">Active mode</span>
+            <strong>{activeModeLabel}</strong>
+            {isAdmin && <p className="admin-note">Admin tools enabled</p>}
+          </div>
+
+          <div className="mode-toggle" aria-label="Choose active marketplace mode">
+            <button
+              className={activeMode === "customer" ? "active" : ""}
+              onClick={() => changeActiveMode("customer")}
+            >
+              Customer
+            </button>
+            <button
+              className={activeMode === "provider" ? "active" : ""}
+              onClick={() => changeActiveMode("provider")}
+            >
+              Provider
+            </button>
+            {isAdmin && (
+              <button
+                className={activeMode === "admin" ? "active" : ""}
+                onClick={() => changeActiveMode("admin")}
+              >
+                Admin
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {view !== "home" && (
         <button className="back-btn" onClick={() => setView("home")}>
@@ -806,26 +1374,26 @@ export default function App() {
         <>
           <section className="problem-panel">
             <div>
-              <p className="eyebrow">Addis Ababa local services marketplace</p>
-              <h2>Everyday home and business tasks need a trusted local network.</h2>
+              <p className="eyebrow">How it works</p>
+              <h2>Post the task, choose a provider, and track the work.</h2>
               <p>
-                AddisTask connects customers who need reliable help with skilled
-                providers who need a simple way to find paid work nearby.
+                AddisTask gives customers a clearer way to request help, compare
+                interested providers, and keep each job moving from open to completed.
               </p>
             </div>
 
             <div className="metric-grid">
               <div>
-                <strong>{tasks.length}</strong>
-                <span>Total tasks</span>
+                <strong>1</strong>
+                <span>Describe the task</span>
               </div>
               <div>
-                <strong>{openTasks}</strong>
-                <span>Open requests</span>
+                <strong>2</strong>
+                <span>Review applications</span>
               </div>
               <div>
-                <strong>{assignedTasks}</strong>
-                <span>Assigned jobs</span>
+                <strong>3</strong>
+                <span>Complete and review</span>
               </div>
             </div>
           </section>
@@ -833,24 +1401,22 @@ export default function App() {
           <section className="dashboard-panel">
             <div className="section-header">
               <div>
-                <h2>Marketplace Snapshot</h2>
+                <h2>Marketplace at a Glance</h2>
                 <p className="muted">
-                  Track early supply, demand, trust, and completion signals.
+                  Live activity from the current AddisTask marketplace.
                 </p>
               </div>
 
               <div className="toolbar-actions">
                 <button onClick={refreshMarketplace}>Refresh Snapshot</button>
-                <button className="secondary-btn inline" onClick={loadDemoData}>
-                  Load Demo Data
-                </button>
-                <button className="secondary-btn inline" onClick={clearDemoData}>
-                  Clear Demo
-                </button>
               </div>
             </div>
 
             <div className="dashboard-grid">
+              <div>
+                <span>Open requests</span>
+                <strong>{openTasks}</strong>
+              </div>
               <div>
                 <span>Total providers</span>
                 <strong>{providers.length}</strong>
@@ -876,18 +1442,30 @@ export default function App() {
 
           <section className="landing">
             <div className="section-title">
-              <h2>What do you need today?</h2>
-              <p>Start from the customer side, provider side, or live marketplace.</p>
+              <h2>Choose Your Next Step</h2>
+              <p>Start as a customer, provider, or marketplace operator.</p>
             </div>
 
             <div className="choice-grid">
-              <button className="choice-card" onClick={() => setView("customer")}>
+              <button
+                className="choice-card"
+                onClick={() => {
+                  changeActiveMode("customer");
+                  setView("customer");
+                }}
+              >
                 <span className="choice-icon">01</span>
                 <strong>Post a task</strong>
                 <small>Describe the job, area, budget, and urgency.</small>
               </button>
 
-              <button className="choice-card" onClick={() => setView("provider")}>
+              <button
+                className="choice-card"
+                onClick={() => {
+                  changeActiveMode("provider");
+                  setView("provider");
+                }}
+              >
                 <span className="choice-icon">02</span>
                 <strong>Offer services</strong>
                 <small>Create a provider profile and apply to matching work.</small>
@@ -904,6 +1482,21 @@ export default function App() {
                 <strong>Browse jobs</strong>
                 <small>Review tasks, match providers, and manage applications.</small>
               </button>
+
+              {isAdmin && (
+                <button
+                  className="choice-card admin-choice"
+                  onClick={() => {
+                    setSearchCategory("");
+                    changeActiveMode("admin");
+                    setView("marketplace");
+                  }}
+                >
+                  <span className="choice-icon">04</span>
+                  <strong>Admin dashboard</strong>
+                  <small>Approve providers and monitor marketplace supply.</small>
+                </button>
+              )}
             </div>
           </section>
 
@@ -912,6 +1505,12 @@ export default function App() {
               <h2>Popular AddisTask services</h2>
               <p>Pick a service to see active marketplace demand.</p>
             </div>
+
+            <img
+              className="service-mosaic"
+              src={serviceMosaic}
+              alt="Local providers helping with cleaning, repairs, moving, and delivery"
+            />
 
             <div className="category-grid">
               {serviceCategories.map((service) => (
@@ -935,27 +1534,39 @@ export default function App() {
 
       {view === "account" && (
         <section className="card narrow">
-          <h2>Account</h2>
-          <p className="muted">Use one account to post tasks or offer services.</p>
+          <div className="form-heading">
+            <span className="eyebrow">Secure access</span>
+            <h2>Account</h2>
+            <p className="muted">Sign in to post tasks, offer services, or manage approvals.</p>
+          </div>
 
-          <input
-            placeholder="Full name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-          />
+          <label className="field-label">
+            Full name
+            <input
+              placeholder="Your name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </label>
 
-          <input
-            placeholder="Phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
+          <label className="field-label">
+            Phone number
+            <input
+              placeholder="09..."
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
 
-          <input
-            placeholder="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <label className="field-label">
+            Password
+            <input
+              placeholder="At least 6 characters"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
 
           {!token ? (
             <div className="button-row">
@@ -974,39 +1585,54 @@ export default function App() {
 
       {view === "customer" && (
         <section className="card narrow">
-          <h2>Post a Task</h2>
-          <p className="muted">Give providers enough detail to quote and respond.</p>
+          <div className="form-heading">
+            <span className="eyebrow">Customer request</span>
+            <h2>Post a Task</h2>
+            <p className="muted">Give providers enough detail to understand the work and respond confidently.</p>
+          </div>
 
-          <input
-            placeholder="Task title, e.g. Deep clean a two-bedroom apartment"
-            value={taskTitle}
-            onChange={(e) => setTaskTitle(e.target.value)}
-          />
+          <label className="field-label">
+            Task title
+            <input
+              placeholder="e.g. Deep clean a two-bedroom apartment"
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+            />
+          </label>
 
-          <textarea
-            placeholder="Describe the work, access details, tools needed, or timing."
-            value={taskDescription}
-            onChange={(e) => setTaskDescription(e.target.value)}
-          />
+          <label className="field-label">
+            Description
+            <textarea
+              placeholder="Describe the work, access details, tools needed, or timing."
+              value={taskDescription}
+              onChange={(e) => setTaskDescription(e.target.value)}
+            />
+          </label>
 
           <div className="form-grid">
-            <select
-              value={taskCategory}
-              onChange={(e) => setTaskCategory(e.target.value)}
-            >
-              {serviceCategories.map((service) => (
-                <option key={service}>{service}</option>
-              ))}
-            </select>
+            <label className="field-label">
+              Service
+              <select
+                value={taskCategory}
+                onChange={(e) => setTaskCategory(e.target.value)}
+              >
+                {serviceCategories.map((service) => (
+                  <option key={service}>{service}</option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              value={taskLocation}
-              onChange={(e) => setTaskLocation(e.target.value)}
-            >
-              {addisAreas.map((area) => (
-                <option key={area}>{area}</option>
-              ))}
-            </select>
+            <label className="field-label">
+              Area
+              <select
+                value={taskLocation}
+                onChange={(e) => setTaskLocation(e.target.value)}
+              >
+                {addisAreas.map((area) => (
+                  <option key={area}>{area}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="guidance-panel">
@@ -1033,23 +1659,29 @@ export default function App() {
           </div>
 
           <div className="form-grid">
-            <input
-              placeholder="Budget in birr"
-              type="number"
-              min="0"
-              value={taskBudget}
-              onChange={(e) => setTaskBudget(e.target.value)}
-            />
+            <label className="field-label">
+              Budget in birr
+              <input
+                placeholder="e.g. 1800"
+                type="number"
+                min="0"
+                value={taskBudget}
+                onChange={(e) => setTaskBudget(e.target.value)}
+              />
+            </label>
 
-            <select
-              value={taskUrgency}
-              onChange={(e) => setTaskUrgency(e.target.value)}
-            >
-              <option>Flexible</option>
-              <option>This week</option>
-              <option>Tomorrow</option>
-              <option>Today</option>
-            </select>
+            <label className="field-label">
+              Urgency
+              <select
+                value={taskUrgency}
+                onChange={(e) => setTaskUrgency(e.target.value)}
+              >
+                <option>Flexible</option>
+                <option>This week</option>
+                <option>Tomorrow</option>
+                <option>Today</option>
+              </select>
+            </label>
           </div>
 
           <div className="fee-estimate">
@@ -1068,94 +1700,117 @@ export default function App() {
           </div>
 
           <div className="form-grid">
-            <input
-              type="date"
-              value={taskDate}
-              onChange={(e) => setTaskDate(e.target.value)}
-              aria-label="Preferred task date"
-            />
+            <label className="field-label">
+              Preferred date
+              <input
+                type="date"
+                value={taskDate}
+                onChange={(e) => setTaskDate(e.target.value)}
+              />
+            </label>
 
-            <select
-              value={taskTimeWindow}
-              onChange={(e) => setTaskTimeWindow(e.target.value)}
-            >
-              <option>Any time</option>
-              <option>Morning</option>
-              <option>Afternoon</option>
-              <option>Evening</option>
-              <option>Weekend</option>
-            </select>
+            <label className="field-label">
+              Time window
+              <select
+                value={taskTimeWindow}
+                onChange={(e) => setTaskTimeWindow(e.target.value)}
+              >
+                <option>Any time</option>
+                <option>Morning</option>
+                <option>Afternoon</option>
+                <option>Evening</option>
+                <option>Weekend</option>
+              </select>
+            </label>
           </div>
 
-          <textarea
-            className="compact-textarea"
-            placeholder="Access notes, e.g. call before arrival, bring ladder, parking instructions."
-            value={taskAccessNotes}
-            onChange={(e) => setTaskAccessNotes(e.target.value)}
-          />
+          <label className="field-label">
+            Access notes
+            <textarea
+              className="compact-textarea"
+              placeholder="e.g. call before arrival, bring ladder, parking instructions."
+              value={taskAccessNotes}
+              onChange={(e) => setTaskAccessNotes(e.target.value)}
+            />
+          </label>
 
-          <button onClick={createTask}>Post Task</button>
+          <div className="form-actions">
+            <button onClick={createTask}>Post Task</button>
 
-          <button
-            className="secondary-btn"
-            onClick={() => {
-              setSearchCategory("");
-              setView("marketplace");
-            }}
-          >
-            View Marketplace
-          </button>
+            <button
+              className="secondary-btn inline"
+              onClick={() => {
+                setSearchCategory("");
+                setView("marketplace");
+              }}
+            >
+              View Marketplace
+            </button>
+          </div>
         </section>
       )}
 
       {view === "provider" && (
         <section className="card narrow">
-          <h2>Become a Provider</h2>
-          <p className="muted">Create a profile customers can trust before booking.</p>
+          <div className="form-heading">
+            <span className="eyebrow">Provider onboarding</span>
+            <h2>Become a Provider</h2>
+            <p className="muted">Create a profile customers can trust before booking.</p>
+          </div>
 
-          <input
-            placeholder="Business or provider name"
-            value={providerName}
-            onChange={(e) => setProviderName(e.target.value)}
-          />
+          <label className="field-label">
+            Business or provider name
+            <input
+              placeholder="e.g. Bole Bright Cleaning"
+              value={providerName}
+              onChange={(e) => setProviderName(e.target.value)}
+            />
+          </label>
 
           <div className="form-grid">
-            <select
-              value={providerCategory}
-              onChange={(e) => setProviderCategory(e.target.value)}
-            >
-              {serviceCategories.map((service) => (
-                <option key={service}>{service}</option>
-              ))}
-            </select>
+            <label className="field-label">
+              Primary service
+              <select
+                value={providerCategory}
+                onChange={(e) => setProviderCategory(e.target.value)}
+              >
+                {serviceCategories.map((service) => (
+                  <option key={service}>{service}</option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              value={providerCity}
-              onChange={(e) => setProviderCity(e.target.value)}
-            >
-              {addisAreas.map((area) => (
-                <option key={area}>{area}</option>
-              ))}
-            </select>
+            <label className="field-label">
+              Main service area
+              <select
+                value={providerCity}
+                onChange={(e) => setProviderCity(e.target.value)}
+              >
+                {addisAreas.map((area) => (
+                  <option key={area}>{area}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          <div className="trust-list">
-            <span>Rating</span>
-            <span>Completed jobs</span>
-            <span>Response time</span>
+          <div className="provider-note">
+            <strong>Approval required</strong>
+            <p>After submitting, an admin must approve the provider profile before it can apply to customer tasks.</p>
           </div>
 
-          <button onClick={createProvider}>Create Provider Profile</button>
+          <div className="form-actions">
+            <button onClick={createProvider}>Create Provider Profile</button>
 
-          <button
-            className="secondary-btn"
-            onClick={() => {
-              setSearchCategory("");
-              setView("marketplace");
-            }}
-          >
-            Browse Tasks
-          </button>
+            <button
+              className="secondary-btn inline"
+              onClick={() => {
+                setSearchCategory("");
+                setView("marketplace");
+              }}
+            >
+              Browse Tasks
+            </button>
+          </div>
         </section>
       )}
 
@@ -1196,7 +1851,11 @@ export default function App() {
               </div>
               <div>
                 <span>Provider supply</span>
-                <strong>{providers.length}</strong>
+                <strong>{approvedProviders.length}/{providers.length}</strong>
+              </div>
+              <div>
+                <span>Pending verification</span>
+                <strong>{pendingProviders.length}</strong>
               </div>
               <div>
                 <span>Avg. rating</span>
@@ -1206,6 +1865,42 @@ export default function App() {
                 <span>Est. platform revenue</span>
                 <strong>{estimatedMarketplaceRevenue} birr</strong>
               </div>
+            </div>
+
+            <div className="notification-center">
+              <div>
+                <span className="notification-label">Notification Center</span>
+                <strong>{activeNotificationCount} item{activeNotificationCount === 1 ? "" : "s"} need attention</strong>
+                <p>{notificationDescription}</p>
+              </div>
+
+              <div className="notification-actions">
+                <button onClick={refreshNotifications}>Refresh Alerts</button>
+                {marketplaceSyncedAt && (
+                  <span className="sync-note">Updated {marketplaceSyncedAt}</span>
+                )}
+                <span className="notification-badge">{activeNotificationCount}</span>
+              </div>
+            </div>
+
+            <div className="notification-grid">
+              {activeNotifications.map((notification) => (
+                <div className="notification-card" key={notification.id}>
+                  <span className={notification.count ? "notification-count active" : "notification-count"}>
+                    {notification.count}
+                  </span>
+                  <div>
+                    <strong>{notification.title}</strong>
+                    <p>{notification.text}</p>
+                  </div>
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => runNotificationAction(notification.id)}
+                  >
+                    {notification.action}
+                  </button>
+                </div>
+              ))}
             </div>
 
             <div className="category-insights">
@@ -1219,6 +1914,79 @@ export default function App() {
               ))}
             </div>
           </section>
+
+          {activeMode === "admin" && isAdmin && (
+          <section className="card wide admin-queue-card">
+            <div className="section-header">
+              <div>
+                <h2>Provider Approval Queue</h2>
+                <p className="muted">
+                  Review provider profiles before they can apply for customer tasks.
+                </p>
+              </div>
+
+              <div className="toolbar-actions">
+                <button onClick={loadVerificationQueue}>Load Queue</button>
+                <button className="secondary-btn inline" onClick={loadProviders}>
+                  Refresh Providers
+                </button>
+              </div>
+            </div>
+
+            <div className="activity-summary">
+              <div>
+                <span>Waiting approval</span>
+                <strong>{pendingProviders.length}</strong>
+              </div>
+              <div>
+                <span>Approved</span>
+                <strong>{approvedProviders.length}</strong>
+              </div>
+              <div>
+                <span>Total providers</span>
+                <strong>{providers.length}</strong>
+              </div>
+              <div>
+                <span>Open tasks</span>
+                <strong>{openTasks}</strong>
+              </div>
+            </div>
+
+            <div className="list">
+              {verificationQueue.length === 0 && (
+                <div className="empty-state">
+                  Click Load Queue to review provider profiles waiting for approval.
+                </div>
+              )}
+
+              {verificationQueue.map((provider) => (
+                <div className="row admin-review-row" key={provider.id}>
+                  <div>
+                    <strong>{provider.business_name}</strong>
+                    <p>{provider.skill_category} | {provider.city}</p>
+                    <div className="trust-list compact">
+                      <span>Rating: {provider.rating || 4.5}</span>
+                      <span>Completed: {provider.completed_tasks || 0}</span>
+                      <span>Status: {provider.approval_status}</span>
+                    </div>
+                  </div>
+
+                  <div className="actions">
+                    <button onClick={() => updateProviderApproval(provider.id, "approved")}>
+                      Approve
+                    </button>
+                    <button
+                      className="secondary-btn inline"
+                      onClick={() => updateProviderApproval(provider.id, "rejected")}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          )}
 
           <Marketplace
             loadTasks={loadTasks}
@@ -1234,153 +2002,51 @@ export default function App() {
             applyToTask={applyToTask}
             loadApplications={loadApplications}
             completeTask={completeTask}
+            activeMode={activeMode}
+            currentUserId={currentUserId}
+            providerApprovalStatus={myProviderApprovalStatus}
           />
 
           <MatchedProviders selectedTask={selectedTask} matches={matches} />
 
-          <section className="card wide">
+          {activeMode === "customer" && (
+          <section className="card wide customer-review-card">
             <div className="section-header">
               <div>
-                <h2>Provider Directory</h2>
+                <h2>Customer Application Review</h2>
                 <p className="muted">
-                  Browse trusted local providers by service, rating, completed jobs,
-                  and response time.
-                </p>
-              </div>
-
-              <button onClick={loadProviders}>Load Providers</button>
-            </div>
-
-            <div className="provider-grid">
-              {filteredProviders.length === 0 && (
-                <div className="empty-state">
-                  Load providers or choose another service category.
-                </div>
-              )}
-
-              {filteredProviders.map((provider) => (
-                <div className="provider-card" key={provider.id}>
-                  <div>
-                    <strong>{provider.business_name}</strong>
-                    <p>{provider.skill_category} | {provider.city}</p>
-                  </div>
-
-                  <div className="trust-list compact">
-                    <span>Rating: {provider.rating || 4.5}</span>
-                    <span>Completed: {provider.completed_tasks || 0}</span>
-                    <span>Response: {provider.response_time_minutes || 30} min</span>
-                  </div>
-
-                  <span className="verification-pill">Profile active</span>
-
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => saveProvider(provider)}
-                  >
-                    Save Provider
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Saved Providers</h2>
-                <p className="muted">
-                  Shortlist providers while comparing services, ratings, and response
-                  times.
+                  After a provider applies, the customer who posted the task can
+                  accept or reject the application here.
                 </p>
               </div>
             </div>
 
-            <div className="provider-grid">
-              {savedProviders.length === 0 && (
-                <div className="empty-state">
-                  Save providers from the directory to compare them here.
-                </div>
-              )}
-
-              {savedProviders.map((provider) => (
-                <div className="provider-card saved-provider" key={provider.id}>
-                  <div>
-                    <strong>{provider.business_name}</strong>
-                    <p>{provider.skill_category} | {provider.city}</p>
-                  </div>
-
-                  <div className="trust-list compact">
-                    <span>Rating: {provider.rating || 4.5}</span>
-                    <span>Completed: {provider.completed_tasks || 0}</span>
-                    <span>Response: {provider.response_time_minutes || 30} min</span>
-                  </div>
-
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => removeSavedProvider(provider.id)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Provider Activity</h2>
-                <p className="muted">
-                  Providers can check whether their task applications are pending,
-                  accepted, or rejected.
+            {applicationsTask && (
+              <div className="review-context">
+                <span>Reviewing task</span>
+                <strong>{applicationsTask.title}</strong>
+                <p>
+                  {applications.length
+                    ? `${applications.length} provider application${
+                        applications.length === 1 ? "" : "s"
+                      } loaded`
+                    : "No provider applications loaded yet"}
                 </p>
               </div>
+            )}
 
-              <button onClick={loadProviderApplications}>Load My Activity</button>
-            </div>
+            {applicationsError && (
+              <div className="empty-state attention-state">
+                {applicationsError}
+              </div>
+            )}
 
             <div className="list">
-              {providerApplications.length === 0 && (
+              {applications.length === 0 && !applicationsError && (
                 <div className="empty-state">
-                  Apply to a task, then load provider activity to see status updates.
-                </div>
-              )}
-
-              {providerApplications.map((application) => (
-                <div className="row" key={application.application_id}>
-                  <div>
-                    <strong>{application.task_title || "Task application"}</strong>
-                    <p>
-                      {application.task_category || "Service"} |{" "}
-                      {application.task_location || "Addis Ababa"} |{" "}
-                      {application.task_budget || 0} birr
-                    </p>
-                    <div className="trust-list compact">
-                      <span>Task: {application.task_status || "open"}</span>
-                      <span>Application ID: {application.application_id}</span>
-                    </div>
-                  </div>
-
-                  <span className={`status-pill ${application.status}`}>
-                    {application.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Applications</h2>
-                <p className="muted">Customers can compare applicants and assign the job.</p>
-              </div>
-            </div>
-
-            <div className="list">
-              {applications.length === 0 && (
-                <div className="empty-state">
-                  Select Applications on a task to review provider requests.
+                  Click Applications on a task while logged in as the customer who
+                  posted it. If a provider already applied, the request will appear
+                  here with Accept and Reject buttons.
                 </div>
               )}
 
@@ -1427,7 +2093,212 @@ export default function App() {
               ))}
             </div>
           </section>
+          )}
 
+          {activeMode === "provider" && (
+          <section className="card wide">
+            <div className="section-header">
+              <div>
+                <h2>Provider Verification</h2>
+                <p className="muted">
+                  Providers must be approved before they can apply to customer tasks.
+                </p>
+              </div>
+
+              <button onClick={loadMyProviderProfile}>Check My Status</button>
+            </div>
+
+            <div className="activity-summary">
+              <div>
+                <span>My profile</span>
+                <strong>{myProviderProfile ? myProviderProfile.business_name : "Not loaded"}</strong>
+              </div>
+              <div>
+                <span>Approval status</span>
+                <strong>{myProviderApprovalStatus}</strong>
+              </div>
+              <div>
+                <span>Approved supply</span>
+                <strong>{approvedProviders.length}</strong>
+              </div>
+              <div>
+                <span>Pending review</span>
+                <strong>{pendingProviders.length}</strong>
+              </div>
+            </div>
+
+            {myProviderProfile?.approval_status === "pending" && (
+              <div className="empty-state attention-state">
+                Your provider profile is waiting for platform approval. After approval,
+                the Apply button will be available for open tasks.
+              </div>
+            )}
+          </section>
+          )}
+
+          {activeMode === "provider" && (
+          <section className="card wide">
+            <div className="section-header">
+              <div>
+                <h2>Provider Directory</h2>
+                <p className="muted">
+                  Browse trusted local providers by service, rating, completed jobs,
+                  and response time.
+                </p>
+              </div>
+
+              <button onClick={loadProviders}>Load Providers</button>
+            </div>
+
+            <div className="provider-grid">
+              {filteredProviders.length === 0 && (
+                <div className="empty-state">
+                  Load providers or choose another service category.
+                </div>
+              )}
+
+              {filteredProviders.map((provider) => (
+                <div className="provider-card" key={provider.id}>
+                  <div>
+                    <strong>{provider.business_name}</strong>
+                    <p>{provider.skill_category} | {provider.city}</p>
+                  </div>
+
+                  <div className="trust-list compact">
+                    <span>Rating: {provider.rating || 4.5}</span>
+                    <span>Completed: {provider.completed_tasks || 0}</span>
+                    <span>Response: {provider.response_time_minutes || 30} min</span>
+                  </div>
+
+                  <span className={`verification-pill ${provider.approval_status || "pending"}`}>
+                    {provider.approval_status || "pending"}
+                  </span>
+
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => saveProvider(provider)}
+                  >
+                    Save Provider
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+          )}
+
+          {(activeMode === "customer" || activeMode === "provider") && (
+          <section className="card wide">
+            <div className="section-header">
+              <div>
+                <h2>Saved Providers</h2>
+                <p className="muted">
+                  Shortlist providers while comparing services, ratings, and response
+                  times.
+                </p>
+              </div>
+            </div>
+
+            <div className="provider-grid">
+              {savedProviders.length === 0 && (
+                <div className="empty-state">
+                  Save providers from the directory to compare them here.
+                </div>
+              )}
+
+              {savedProviders.map((provider) => (
+                <div className="provider-card saved-provider" key={provider.id}>
+                  <div>
+                    <strong>{provider.business_name}</strong>
+                    <p>{provider.skill_category} | {provider.city}</p>
+                  </div>
+
+                  <div className="trust-list compact">
+                    <span>Rating: {provider.rating || 4.5}</span>
+                    <span>Completed: {provider.completed_tasks || 0}</span>
+                    <span>Response: {provider.response_time_minutes || 30} min</span>
+                    <span>Status: {provider.approval_status || "pending"}</span>
+                  </div>
+
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => removeSavedProvider(provider.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+          )}
+
+          {activeMode === "provider" && (
+          <section className="card wide">
+            <div className="section-header">
+              <div>
+                <h2>Provider Activity</h2>
+                <p className="muted">
+                  Providers can check whether their task applications are pending,
+                  accepted, or rejected.
+                </p>
+              </div>
+
+              <button onClick={loadProviderApplications}>Load My Activity</button>
+            </div>
+
+            <div className="activity-summary">
+              <div>
+                <span>Accepted</span>
+                <strong>{acceptedProviderApplications.length}</strong>
+              </div>
+              <div>
+                <span>Pending</span>
+                <strong>{pendingProviderApplications.length}</strong>
+              </div>
+              <div>
+                <span>Rejected</span>
+                <strong>{rejectedProviderApplications.length}</strong>
+              </div>
+              <div>
+                <span>Last checked</span>
+                <strong>{providerActivityLoadedAt || "Not yet"}</strong>
+              </div>
+            </div>
+
+            <div className="list">
+              {providerApplications.length === 0 && (
+                <div className="empty-state">
+                  Apply to a task, then load provider activity to see status updates.
+                </div>
+              )}
+
+              {providerApplications.map((application) => (
+                <div className="row" key={application.application_id}>
+                  <div>
+                    <strong>{application.task_title || "Task application"}</strong>
+                    <p>
+                      {application.task_category || "Service"} |{" "}
+                      {application.task_location || "Addis Ababa"} |{" "}
+                      {application.task_budget || 0} birr
+                    </p>
+                    <div className="trust-list compact">
+                      <span>Task: {application.task_status || "open"}</span>
+                      <span>Application ID: {application.application_id}</span>
+                    </div>
+                    <p className="application-notice">
+                      {getProviderApplicationNotice(application.status)}
+                    </p>
+                  </div>
+
+                  <span className={`status-pill ${application.status}`}>
+                    {application.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+          )}
+
+          {(activeMode === "customer" || activeMode === "provider") && (
           <section className="card wide">
             <div className="section-header">
               <div>
@@ -1491,7 +2362,9 @@ export default function App() {
               </div>
             )}
           </section>
+          )}
 
+          {activeMode === "customer" && (
           <section className="card wide">
             <div className="section-header">
               <div>
@@ -1542,6 +2415,7 @@ export default function App() {
               </div>
             )}
           </section>
+          )}
         </>
       )}
     </div>

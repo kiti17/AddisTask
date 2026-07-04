@@ -6,7 +6,7 @@ from app.models.provider import ProviderProfile
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.provider import ProviderCreate
-from app.core.security import get_current_user
+from app.core.security import get_current_admin_user, get_current_user
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
@@ -51,6 +51,7 @@ def create_provider(
         business_name=provider.business_name,
         skill_category=provider.skill_category,
         city=provider.city,
+        approval_status="pending",
         rating=4.5,
         completed_tasks=10,
         response_time_minutes=30
@@ -63,9 +64,91 @@ def create_provider(
     return new_provider
 
 
+@router.get("/me")
+def get_my_provider_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    provider = db.query(ProviderProfile).filter(
+        ProviderProfile.user_id == current_user.id
+    ).first()
+
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider profile not found")
+
+    return {
+        "id": provider.id,
+        "user_id": provider.user_id,
+        "business_name": provider.business_name,
+        "skill_category": provider.skill_category,
+        "city": provider.city,
+        "rating": provider.rating,
+        "completed_tasks": provider.completed_tasks,
+        "response_time_minutes": provider.response_time_minutes,
+        "approval_status": provider.approval_status
+    }
+
+
+@router.get("/verification-queue")
+def get_provider_verification_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    providers = db.query(ProviderProfile).filter(
+        ProviderProfile.approval_status == "pending"
+    ).all()
+
+    return [
+        {
+            "id": provider.id,
+            "user_id": provider.user_id,
+            "business_name": provider.business_name,
+            "skill_category": provider.skill_category,
+            "city": provider.city,
+            "rating": provider.rating,
+            "completed_tasks": provider.completed_tasks,
+            "response_time_minutes": provider.response_time_minutes,
+            "approval_status": provider.approval_status
+        }
+        for provider in providers
+    ]
+
+
+@router.patch("/{provider_id}/approval")
+def update_provider_approval_status(
+    provider_id: int,
+    status: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    if status not in ["pending", "approved", "rejected"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Status must be pending, approved, or rejected"
+        )
+
+    provider = db.query(ProviderProfile).filter(
+        ProviderProfile.id == provider_id
+    ).first()
+
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider profile not found")
+
+    provider.approval_status = status
+    db.commit()
+    db.refresh(provider)
+
+    return {
+        "id": provider.id,
+        "approval_status": provider.approval_status
+    }
+
+
 @router.get("/ranked")
 def get_ranked_providers(db: Session = Depends(get_db)):
-    providers = db.query(ProviderProfile).all()
+    providers = db.query(ProviderProfile).filter(
+        ProviderProfile.approval_status == "approved"
+    ).all()
 
     ranked = sorted(
         providers,
@@ -94,7 +177,8 @@ def match_providers_for_task(
 
     providers = db.query(ProviderProfile).filter(
     ProviderProfile.skill_category.ilike(task.category),
-    ProviderProfile.city.ilike(task.location)
+    ProviderProfile.city.ilike(task.location),
+    ProviderProfile.approval_status == "approved"
     ).all()
     
     ranked = sorted(
@@ -112,6 +196,7 @@ def match_providers_for_task(
             "rating": p.rating,
             "completed_tasks": p.completed_tasks,
             "response_time_minutes": p.response_time_minutes,
+            "approval_status": p.approval_status,
             "match_score": calculate_score(p, task),
             "category_match": p.skill_category.lower() == task.category.lower(),
             "city_match": p.city.lower() == task.location.lower()
@@ -132,7 +217,8 @@ def get_providers(db: Session = Depends(get_db)):
             "city": p.city,
             "rating": p.rating,
             "completed_tasks": p.completed_tasks,
-            "response_time_minutes": p.response_time_minutes
+            "response_time_minutes": p.response_time_minutes,
+            "approval_status": p.approval_status
         }
         for p in providers
     ]

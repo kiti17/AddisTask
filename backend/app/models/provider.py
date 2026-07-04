@@ -12,6 +12,7 @@ class ProviderProfile(Base):
     business_name = Column(String(150), nullable=False)
     skill_category = Column(String(80), nullable=False)
     city = Column(String(80), nullable=False, default="Addis Ababa")
+    approval_status = Column(String(30), nullable=False, default="pending")
 
     rating = Column(Float, default=0.0)
     completed_tasks = Column(Integer, default=0)

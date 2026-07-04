@@ -155,19 +155,71 @@ http://localhost:5173
 Backend Render environment variables:
 
 ```text
+APP_ENV=production
 DATABASE_URL=postgresql://...
 PYTHON_VERSION=3.11.9
-JWT_SECRET=replace-with-secure-secret
+JWT_SECRET=replace-with-secure-secret-at-least-32-characters
 JWT_ALG=HS256
 JWT_EXPIRES_MIN=60
 CORS_ORIGINS=http://localhost:5173,https://addistask-1.onrender.com
 ```
+
+Production safety rules:
+
+- `APP_ENV=production` requires a secure `JWT_SECRET`.
+- Production `JWT_SECRET` must not be `change-this-secret`.
+- Production `JWT_SECRET` must be at least 32 characters.
+- Production `DATABASE_URL` must not point to localhost.
+
+For local development, copy `.env.example` to `.env` and keep `APP_ENV=local`.
 
 Frontend Render environment variable:
 
 ```text
 VITE_API_URL=https://addistask.onrender.com
 ```
+
+## Database Migrations
+
+Alembic is configured for production database changes.
+
+Run migrations from the backend folder:
+
+```powershell
+cd backend
+python -m alembic upgrade head
+```
+
+The first migration adds `provider_profiles.approval_status`, which is used by the provider verification workflow.
+
+If an existing local database already has the column because it was added before Alembic was introduced, mark the database at the current migration revision:
+
+```powershell
+cd backend
+python -m alembic stamp head
+```
+
+Local note: if `backend/.venv/Scripts/python.exe` points to a missing Python install, recreate the backend virtual environment before running Alembic:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m alembic upgrade head
+```
+
+## Tests
+
+The backend includes automated workflow tests for the core marketplace rules: login identity, admin-only provider approval, provider application approval, customer acceptance, and blocking users from applying to their own tasks.
+
+Run the test suite from the backend folder:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests\test_marketplace_workflow.py -q
+```
+
+These tests use the local development database, so keep PostgreSQL running before executing them.
 
 ## Demo Workflow
 
