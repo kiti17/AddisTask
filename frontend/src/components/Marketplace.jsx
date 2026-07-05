@@ -7,7 +7,8 @@ export default function Marketplace({
   maxBudget,
   setMaxBudget,
   addisAreas,
-  filteredTasks,
+  serviceCategories,
+  tasks,
   loadMatches,
   applyToTask,
   loadApplications,
@@ -110,6 +111,21 @@ export default function Marketplace({
         </button>
       </div>
 
+      <div className="service-catalog-strip" aria-label="Services available on AddisTask">
+        <span>Services available</span>
+        <div>
+          {serviceCategories.map((service) => (
+            <button
+              key={service}
+              type="button"
+              onClick={() => setSearchCategory(service)}
+            >
+              {service}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="workflow-guide" aria-label="Task workflow">
         {workflowSteps.map((step, index) => (
           <div className="workflow-step" key={step}>
@@ -120,13 +136,13 @@ export default function Marketplace({
       </div>
 
       <div className="list">
-        {filteredTasks.length === 0 && (
+        {tasks.length === 0 && (
           <div className="empty-state">
-            No active tasks match this category yet.
+            No tasks have been posted yet.
           </div>
         )}
 
-        {filteredTasks.map((t) => (
+        {tasks.map((t) => (
           <TaskRow
             key={t.id}
             task={t}

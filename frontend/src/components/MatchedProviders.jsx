@@ -1,6 +1,7 @@
 export default function MatchedProviders({
   selectedTask,
   matches,
+  openProviderProfile,
 }) {
   if (!selectedTask) return null;
 
@@ -37,7 +38,15 @@ export default function MatchedProviders({
               </div>
             </div>
 
-            <span className="score">Score: {m.match_score}</span>
+            <div className="actions">
+              <span className="score">Score: {m.match_score}</span>
+              <button
+                className="secondary-btn inline"
+                onClick={() => openProviderProfile(m)}
+              >
+                View Profile
+              </button>
+            </div>
           </div>
         ))}
       </div>

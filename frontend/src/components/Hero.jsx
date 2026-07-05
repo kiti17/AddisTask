@@ -1,80 +1,112 @@
+import { useState } from "react";
+
+import heroImage from "../assets/hero-service-marketplace.jpg";
+import logoMark from "../assets/addistask-logo-mark.png";
+
 export default function Hero({
   token,
   currentUser,
   logout,
   setView,
-  activeMode,
   setActiveMode,
   currentUserRole,
   notificationCount,
-  notificationText,
-  notificationUpdatedAt,
   setSearchCategory,
+  openAccountModal,
 }) {
-  const featuredServices = [
+  const [heroSearch, setHeroSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const serviceSuggestions = [
     "Cleaning",
     "Plumbing",
+    "Electrical",
     "Moving",
     "Delivery",
-    "Electrical",
     "Home Repair",
+    "Painting",
   ];
-  const activeModeLabel =
-    activeMode === "admin"
-      ? "Admin"
-      : activeMode === "provider"
-        ? "Provider"
-        : "Customer";
 
-  const switchMode = () => {
-    if (currentUserRole === "admin" && activeMode !== "admin") {
-      setActiveMode("admin");
-      setView("marketplace");
-      return;
-    }
+  const searchServices = (event) => {
+    event.preventDefault();
+    setSearchCategory(heroSearch.trim());
+    setShowSuggestions(false);
+    setView("marketplace");
+  };
 
-    setActiveMode(activeMode === "provider" ? "customer" : "provider");
+  const chooseSuggestion = (service) => {
+    setHeroSearch(service);
+    setSearchCategory(service);
+    setShowSuggestions(false);
+    setView("marketplace");
   };
 
   return (
-    <header className="hero">
-      <div className="hero-copy">
-        <p className="eyebrow light">Trusted local services for Addis Ababa</p>
-        <h1>Book trusted help for everyday tasks.</h1>
-        <p>
-          AddisTask connects customers with approved local providers for cleaning,
-          repairs, moving, delivery, and home support.
-        </p>
+    <>
+      <nav className="site-topbar" aria-label="Main navigation">
+        <button
+          className="site-brand"
+          onClick={() => setView("home")}
+          aria-label="Go to AddisTask home"
+        >
+          <img src={logoMark} alt="" />
+          <strong>
+            <span>Addis</span>
+            <span>Task</span>
+          </strong>
+        </button>
 
-        <div className="hero-service-panel" aria-label="Popular services">
-          <span>What do you need help with?</span>
-          <div className="hero-service-grid">
-            {featuredServices.map((service) => (
-              <button
-                className="hero-service"
-                key={service}
-                onClick={() => {
-                  setSearchCategory(service);
-                  setView("marketplace");
-                }}
-              >
-                {service}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="hero-actions">
+        <div className="site-nav-actions">
           <button
+            className="nav-link"
             onClick={() => {
-              setActiveMode("customer");
-              setView("customer");
+              setSearchCategory("");
+              setView("marketplace");
             }}
           >
-            Post a Task
+            Services
           </button>
           <button
-            className="secondary-btn hero-secondary"
+            className="nav-link"
+            onClick={() => {
+              setSearchCategory("");
+              setView("marketplace");
+            }}
+          >
+            Browse Jobs
+          </button>
+
+          {token ? (
+            <>
+              <button
+                className={notificationCount ? "nav-link alert-link active" : "nav-link alert-link"}
+                onClick={() => setView("marketplace")}
+              >
+                Alerts {notificationCount ? `(${notificationCount})` : ""}
+              </button>
+              <span className="topbar-user">{currentUser || "User"}</span>
+              {currentUserRole === "admin" && (
+                <button
+                  className="nav-link"
+                  onClick={() => {
+                    setActiveMode("admin");
+                    setView("marketplace");
+                  }}
+                >
+                  Admin
+                </button>
+              )}
+              <button className="nav-link" onClick={logout}>
+                Logout
+              </button>
+            </>
+          ) : (
+            <button className="nav-link" onClick={openAccountModal}>
+              Sign up / Log in
+            </button>
+          )}
+
+          <button
+            className="topbar-provider-btn"
             onClick={() => {
               setActiveMode("provider");
               setView("provider");
@@ -83,58 +115,98 @@ export default function Hero({
             Become a Provider
           </button>
         </div>
+      </nav>
 
-        <div className="hero-trust-strip">
-          <span>Admin-approved providers</span>
-          <span>Task status tracking</span>
-          <span>Local Addis Ababa areas</span>
-        </div>
-      </div>
+      <header className="hero">
+        <div className="hero-copy">
+          <h1>Get help with tasks in Addis Ababa.</h1>
+          <p>
+            Search for cleaning, repairs, moving, delivery, and other local services.
+          </p>
 
-      <div className="top-actions">
-        {token ? (
-          <div className="user-info">
-            <div className="user-meta">
-              <span>
-                Logged in as: {currentUser || "User"}
-              </span>
-              <span>
-                Acting as: {activeModeLabel}
-              </span>
-              {currentUserRole === "admin" && (
-                <span className="admin-pill">Admin</span>
-              )}
-            </div>
-
-            <button
-              className={notificationCount ? "global-alert active" : "global-alert"}
-              onClick={() => setView("marketplace")}
+          <div className="hero-search-wrap">
+            <form
+              className="hero-search"
+              onSubmit={searchServices}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
             >
-              <span>{notificationCount}</span>
-              <strong>{notificationText}</strong>
-              {notificationUpdatedAt && <small>Updated {notificationUpdatedAt}</small>}
-            </button>
+              <input
+                value={heroSearch}
+                onChange={(event) => {
+                  setHeroSearch(event.target.value);
+                  setShowSuggestions(true);
+                }}
+                onClick={() => setShowSuggestions(true)}
+                placeholder="What do you need help with?"
+                aria-label="Search services"
+                aria-expanded={showSuggestions}
+                aria-controls="hero-service-suggestions"
+              />
+              <button type="submit" aria-label="Search services">
+                Search
+              </button>
+            </form>
 
+            {showSuggestions && (
+              <div className="hero-suggestions" id="hero-service-suggestions">
+                {serviceSuggestions.map((service) => (
+                  <button
+                    key={service}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      chooseSuggestion(service);
+                    }}
+                  >
+                    {service}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="hero-service-chips" aria-label="Available services">
+            {serviceSuggestions.map((service) => (
+              <button
+                key={service}
+                type="button"
+                onClick={() => chooseSuggestion(service)}
+              >
+                {service}
+              </button>
+            ))}
+          </div>
+
+          <div className="hero-actions">
+            <button
+              className="primary-action"
+              onClick={() => {
+                setActiveMode("customer");
+                setView("customer");
+              }}
+            >
+              Post a Task
+            </button>
             <button
               className="secondary-btn hero-secondary"
-              onClick={switchMode}
+              onClick={() => {
+                setActiveMode("provider");
+                setView("provider");
+              }}
             >
-              Switch Mode
-            </button>
-
-            <button
-              className="logout-btn"
-              onClick={logout}
-            >
-              Logout
+              Become a Provider
             </button>
           </div>
-        ) : (
-          <button onClick={() => setView("account")}>
-            Login
-          </button>
-        )}
-      </div>
-    </header>
+        </div>
+
+        <div className="hero-image-panel">
+          <img
+            src={heroImage}
+            alt="A local service provider arriving to help a customer at home"
+          />
+        </div>
+      </header>
+    </>
   );
 }

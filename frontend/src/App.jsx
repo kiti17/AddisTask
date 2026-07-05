@@ -4,7 +4,12 @@ import { api } from "./services/api";
 import Hero from "./components/Hero";
 import Marketplace from "./components/Marketplace";
 import MatchedProviders from "./components/MatchedProviders";
-import serviceMosaic from "./assets/service-mosaic.jpg";
+import serviceCleaning from "./assets/service-cleaning.jpg";
+import servicePlumbing from "./assets/service-plumbing.jpg";
+import serviceElectrical from "./assets/service-electrical.jpg";
+import serviceMoving from "./assets/service-moving.jpg";
+import serviceDelivery from "./assets/service-delivery.jpg";
+import serviceHomeRepair from "./assets/service-home-repair.jpg";
 
 const serviceCategories = [
   "Cleaning",
@@ -15,6 +20,39 @@ const serviceCategories = [
   "Home Repair",
   "Appliance Repair",
   "Painting",
+];
+
+const featuredServiceCards = [
+  {
+    name: "Cleaning",
+    image: serviceCleaning,
+    description: "Apartment cleaning, move-out cleaning, and regular home care.",
+  },
+  {
+    name: "Plumbing",
+    image: servicePlumbing,
+    description: "Leaks, sinks, bathroom fixtures, and small pipe repairs.",
+  },
+  {
+    name: "Electrical",
+    image: serviceElectrical,
+    description: "Lighting, outlets, switches, and basic electrical fixes.",
+  },
+  {
+    name: "Moving",
+    image: serviceMoving,
+    description: "Furniture moving, loading, unloading, and local moves.",
+  },
+  {
+    name: "Delivery",
+    image: serviceDelivery,
+    description: "Local package, document, and errand delivery across the city.",
+  },
+  {
+    name: "Home Repair",
+    image: serviceHomeRepair,
+    description: "Cabinets, doors, mounting, and everyday home fixes.",
+  },
 ];
 
 const PLATFORM_FEE_RATE = 0.1;
@@ -181,6 +219,8 @@ const demoProviders = [
 
 export default function App() {
   const [view, setView] = useState("home");
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [homeFocus, setHomeFocus] = useState("customer");
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -217,6 +257,11 @@ export default function App() {
   const [providerName, setProviderName] = useState("");
   const [providerCategory, setProviderCategory] = useState(serviceCategories[0]);
   const [providerCity, setProviderCity] = useState(addisAreas[0]);
+  const [providerBio, setProviderBio] = useState("");
+  const [providerExperienceYears, setProviderExperienceYears] = useState("");
+  const [providerServiceArea, setProviderServiceArea] = useState("");
+  const [providerAvailability, setProviderAvailability] = useState("");
+  const [providerContactPhone, setProviderContactPhone] = useState("");
 
   const [selectedTask, setSelectedTask] = useState(null);
   const [matches, setMatches] = useState([]);
@@ -228,7 +273,9 @@ export default function App() {
   const [providerActivityLoadedAt, setProviderActivityLoadedAt] = useState("");
   const [providers, setProviders] = useState([]);
   const [myProviderProfile, setMyProviderProfile] = useState(null);
+  const [selectedProviderProfile, setSelectedProviderProfile] = useState(null);
   const [verificationQueue, setVerificationQueue] = useState([]);
+  const [providerApprovalNotes, setProviderApprovalNotes] = useState({});
   const [marketplaceSyncedAt, setMarketplaceSyncedAt] = useState("");
   const [savedProviders, setSavedProviders] = useState([]);
   const [reviewTaskId, setReviewTaskId] = useState("");
@@ -335,6 +382,7 @@ export default function App() {
       setPassword("");
 
       alert("Logged in successfully");
+      setIsAccountModalOpen(false);
       setView(nextMode === "admin" ? "marketplace" : "home");
     } catch (err) {
       alert(getErrorMessage(err, "Login failed"));
@@ -471,12 +519,26 @@ export default function App() {
         return alert("Admin access is required to approve or reject providers.");
       }
 
+      const adminNotes = providerApprovalNotes[providerId]?.trim() || "";
+
+      if (status === "rejected" && !adminNotes) {
+        return alert("Add a short reason before rejecting this provider.");
+      }
+
       await api.patch(
-        `/api/providers/${providerId}/approval?status=${status}`,
-        {},
+        `/api/providers/${providerId}/approval`,
+        {
+          status,
+          admin_notes: adminNotes || null,
+        },
         authHeader
       );
 
+      setProviderApprovalNotes((current) => {
+        const next = { ...current };
+        delete next[providerId];
+        return next;
+      });
       alert(`Provider marked ${status}.`);
       await Promise.all([loadProviders(), loadVerificationQueue()]);
 
@@ -555,6 +617,17 @@ export default function App() {
     });
   };
 
+  const openProviderProfile = (provider) => {
+    const providerId = provider.id || provider.provider_id;
+    const fullProvider = providers.find((item) => item.id === providerId);
+
+    setSelectedProviderProfile({
+      ...(fullProvider || {}),
+      ...provider,
+      id: providerId,
+    });
+  };
+
   const removeSavedProvider = (providerId) => {
     setSavedProviders((current) =>
       current.filter((provider) => provider.id !== providerId)
@@ -619,19 +692,31 @@ export default function App() {
         return alert("Switch to Provider Mode before creating a provider profile.");
       }
 
-      await api.post(
-        "/api/providers/",
-        {
-          business_name: providerName,
-          skill_category: providerCategory,
-          city: providerCity,
-        },
-        authHeader
-      );
+      const providerPayload = {
+        business_name: providerName,
+        skill_category: providerCategory,
+        city: providerCity,
+        bio: providerBio || null,
+        experience_years: providerExperienceYears ? Number(providerExperienceYears) : 0,
+        service_area: providerServiceArea || providerCity,
+        availability: providerAvailability || null,
+        contact_phone: providerContactPhone || phone || null,
+      };
+
+      if (myProviderProfile) {
+        await api.patch("/api/providers/me", providerPayload, authHeader);
+      } else {
+        await api.post("/api/providers/", providerPayload, authHeader);
+      }
 
       alert("Provider profile submitted for approval. Apply after the profile is approved.");
 
       setProviderName("");
+      setProviderBio("");
+      setProviderExperienceYears("");
+      setProviderServiceArea("");
+      setProviderAvailability("");
+      setProviderContactPhone("");
 
       await loadTasks();
       await loadProviders();
@@ -639,6 +724,30 @@ export default function App() {
       setView("marketplace");
     } catch (err) {
       alert(JSON.stringify(err.response?.data?.detail || "Provider creation failed"));
+    }
+  };
+
+  const loadProviderProfileIntoForm = async () => {
+    try {
+      let profile = myProviderProfile;
+
+      if (!profile) {
+        const res = await api.get("/api/providers/me", authHeader);
+        profile = res.data;
+        setMyProviderProfile(profile);
+      }
+
+      setProviderName(profile.business_name || "");
+      setProviderCategory(profile.skill_category || serviceCategories[0]);
+      setProviderCity(profile.city || addisAreas[0]);
+      setProviderBio(profile.bio || "");
+      setProviderExperienceYears(String(profile.experience_years || 0));
+      setProviderServiceArea(profile.service_area || "");
+      setProviderAvailability(profile.availability || "");
+      setProviderContactPhone(profile.contact_phone || "");
+      setView("provider");
+    } catch (err) {
+      alert(getErrorMessage(err, "Failed to load provider profile"));
     }
   };
 
@@ -1049,23 +1158,6 @@ export default function App() {
     }
   };
 
-  const filteredTasks = tasks.filter((t) => {
-    const status = t.status?.toLowerCase().trim();
-    const category = t.category?.toLowerCase().trim() || "";
-    const location = t.location?.toLowerCase().trim() || "";
-    const search = searchCategory.toLowerCase().trim();
-    const area = searchLocation.toLowerCase().trim();
-    const taskBudgetValue = Number(t.budget || 0);
-    const maxBudgetValue = Number(maxBudget || 0);
-
-    return (
-      status !== "completed" &&
-      category.includes(search) &&
-      location.includes(area) &&
-      (!maxBudgetValue || (taskBudgetValue && taskBudgetValue <= maxBudgetValue))
-    );
-  });
-
   const openTasks = tasks.filter((t) => t.status === "open").length;
   const assignedTasks = tasks.filter((t) => t.status === "assigned").length;
   const completedTasks = tasks.filter((t) => t.status === "completed");
@@ -1082,11 +1174,17 @@ export default function App() {
   const estimatedCustomerTotal = taskBudgetValue + estimatedServiceFee;
   const filteredProviders = providers.filter((provider) => {
     const service = provider.skill_category?.toLowerCase().trim() || "";
+    const businessName = provider.business_name?.toLowerCase().trim() || "";
+    const bio = provider.bio?.toLowerCase().trim() || "";
+    const serviceArea = provider.service_area?.toLowerCase().trim() || "";
     const city = provider.city?.toLowerCase().trim() || "";
     const search = searchCategory.toLowerCase().trim();
     const area = searchLocation.toLowerCase().trim();
+    const matchesSearch = [service, businessName, bio, serviceArea].some((value) =>
+      value.includes(search)
+    );
 
-    return service.includes(search) && city.includes(area);
+    return matchesSearch && city.includes(area);
   });
   const approvedProviders = providers.filter(
     (provider) => provider.approval_status === "approved"
@@ -1314,6 +1412,56 @@ export default function App() {
               : "Balanced",
     };
   });
+  const accountForm = (
+    <>
+      <div className="form-heading">
+        <span className="eyebrow">Secure access</span>
+        <h2>Account</h2>
+        <p className="muted">Sign in to post tasks, offer services, or manage approvals.</p>
+      </div>
+
+      <label className="field-label">
+        Full name
+        <input
+          placeholder="Your name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+        />
+      </label>
+
+      <label className="field-label">
+        Phone number
+        <input
+          placeholder="09..."
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+      </label>
+
+      <label className="field-label">
+        Password
+        <input
+          placeholder="At least 6 characters"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </label>
+
+      {!token ? (
+        <div className="button-row">
+          <button onClick={login}>Login</button>
+          <button className="secondary-btn inline" onClick={register}>
+            Register
+          </button>
+        </div>
+      ) : (
+        <button className="logout-btn" onClick={logout}>
+          Logout
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div className="page">
@@ -1329,6 +1477,7 @@ export default function App() {
         notificationText={globalNotificationText}
         notificationUpdatedAt={marketplaceSyncedAt}
         setSearchCategory={setSearchCategory}
+        openAccountModal={() => setIsAccountModalOpen(true)}
       />
 
       {token && (
@@ -1370,216 +1519,264 @@ export default function App() {
         </button>
       )}
 
+      {isAccountModalOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setIsAccountModalOpen(false)}
+        >
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setIsAccountModalOpen(false)}
+              aria-label="Close account dialog"
+            >
+              Close
+            </button>
+
+            <div id="account-modal-title">
+              {accountForm}
+            </div>
+          </section>
+        </div>
+      )}
+
       {view === "home" && (
         <>
-          <section className="problem-panel">
-            <div>
-              <p className="eyebrow">How it works</p>
-              <h2>Post the task, choose a provider, and track the work.</h2>
-              <p>
-                AddisTask gives customers a clearer way to request help, compare
-                interested providers, and keep each job moving from open to completed.
-              </p>
-            </div>
-
-            <div className="metric-grid">
-              <div>
-                <strong>1</strong>
-                <span>Describe the task</span>
-              </div>
-              <div>
-                <strong>2</strong>
-                <span>Review applications</span>
-              </div>
-              <div>
-                <strong>3</strong>
-                <span>Complete and review</span>
-              </div>
-            </div>
-          </section>
-
-          <section className="dashboard-panel">
+          <section className="guided-home">
             <div className="section-header">
               <div>
-                <h2>Marketplace at a Glance</h2>
+                <span className="eyebrow">Choose what you need</span>
+                <h2>Start with one path</h2>
                 <p className="muted">
-                  Live activity from the current AddisTask marketplace.
+                  Select a button below and only the related information will show.
                 </p>
               </div>
-
-              <div className="toolbar-actions">
-                <button onClick={refreshMarketplace}>Refresh Snapshot</button>
-              </div>
             </div>
 
-            <div className="dashboard-grid">
-              <div>
-                <span>Open requests</span>
-                <strong>{openTasks}</strong>
-              </div>
-              <div>
-                <span>Total providers</span>
-                <strong>{providers.length}</strong>
-              </div>
-              <div>
-                <span>Completed jobs</span>
-                <strong>{completedTasks.length}</strong>
-              </div>
-              <div>
-                <span>Completion rate</span>
-                <strong>{marketplaceCompletionRate}%</strong>
-              </div>
-              <div>
-                <span>Avg. provider rating</span>
-                <strong>{averageProviderRating}</strong>
-              </div>
-              <div>
-                <span>Top demand</span>
-                <strong>{topDemandCategory?.count ? topDemandCategory.service : "None yet"}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="landing">
-            <div className="section-title">
-              <h2>Choose Your Next Step</h2>
-              <p>Start as a customer, provider, or marketplace operator.</p>
-            </div>
-
-            <div className="choice-grid">
+            <div className="home-focus-tabs" aria-label="Choose homepage information">
               <button
-                className="choice-card"
-                onClick={() => {
-                  changeActiveMode("customer");
-                  setView("customer");
-                }}
+                className={homeFocus === "customer" ? "active" : ""}
+                onClick={() => setHomeFocus("customer")}
               >
-                <span className="choice-icon">01</span>
-                <strong>Post a task</strong>
-                <small>Describe the job, area, budget, and urgency.</small>
+                Customer
               </button>
-
               <button
-                className="choice-card"
-                onClick={() => {
-                  changeActiveMode("provider");
-                  setView("provider");
-                }}
+                className={homeFocus === "provider" ? "active" : ""}
+                onClick={() => setHomeFocus("provider")}
               >
-                <span className="choice-icon">02</span>
-                <strong>Offer services</strong>
-                <small>Create a provider profile and apply to matching work.</small>
+                Provider
               </button>
-
               <button
-                className="choice-card"
-                onClick={() => {
-                  setSearchCategory("");
-                  setView("marketplace");
-                }}
+                className={homeFocus === "services" ? "active" : ""}
+                onClick={() => setHomeFocus("services")}
               >
-                <span className="choice-icon">03</span>
-                <strong>Browse jobs</strong>
-                <small>Review tasks, match providers, and manage applications.</small>
+                Services
               </button>
-
+              <button
+                className={homeFocus === "status" ? "active" : ""}
+                onClick={() => setHomeFocus("status")}
+              >
+                Marketplace Status
+              </button>
               {isAdmin && (
                 <button
-                  className="choice-card admin-choice"
-                  onClick={() => {
-                    setSearchCategory("");
-                    changeActiveMode("admin");
-                    setView("marketplace");
-                  }}
+                  className={homeFocus === "admin" ? "active" : ""}
+                  onClick={() => setHomeFocus("admin")}
                 >
-                  <span className="choice-icon">04</span>
-                  <strong>Admin dashboard</strong>
-                  <small>Approve providers and monitor marketplace supply.</small>
+                  Admin
                 </button>
               )}
             </div>
-          </section>
 
-          <section className="categories">
-            <div className="section-title">
-              <h2>Popular AddisTask services</h2>
-              <p>Pick a service to see active marketplace demand.</p>
-            </div>
+            {homeFocus === "customer" && (
+              <div className="home-focus-panel">
+                <div>
+                  <h3>Need help with a task?</h3>
+                  <p>
+                    Post the job, compare interested providers, then choose who
+                    should do the work.
+                  </p>
+                  <div className="how-step-grid">
+                    <div className="how-step-card">
+                      <span>01</span>
+                      <strong>Describe</strong>
+                    </div>
+                    <div className="how-step-card">
+                      <span>02</span>
+                      <strong>Compare</strong>
+                    </div>
+                    <div className="how-step-card">
+                      <span>03</span>
+                      <strong>Book</strong>
+                    </div>
+                  </div>
+                </div>
 
-            <img
-              className="service-mosaic"
-              src={serviceMosaic}
-              alt="Local providers helping with cleaning, repairs, moving, and delivery"
-            />
+                <div className="home-focus-action">
+                  <button
+                    onClick={() => {
+                      changeActiveMode("customer");
+                      setView("customer");
+                    }}
+                  >
+                    Post a Task
+                  </button>
+                </div>
+              </div>
+            )}
 
-            <div className="category-grid">
-              {serviceCategories.map((service) => (
-                <button
-                  key={service}
-                  className="service-card"
-                  onClick={() => {
-                    setTaskCategory(service);
-                    setProviderCategory(service);
-                    setSearchCategory(service);
-                    setView("marketplace");
-                  }}
-                >
-                  {service}
-                </button>
-              ))}
-            </div>
+            {homeFocus === "provider" && (
+              <div className="home-focus-panel">
+                <div>
+                  <h3>Want to offer services?</h3>
+                  <p>
+                    Create a provider profile, wait for admin approval, then apply
+                    to jobs that match your service and area.
+                  </p>
+                  <div className="how-step-grid">
+                    <div className="how-step-card">
+                      <span>01</span>
+                      <strong>Profile</strong>
+                    </div>
+                    <div className="how-step-card">
+                      <span>02</span>
+                      <strong>Approval</strong>
+                    </div>
+                    <div className="how-step-card">
+                      <span>03</span>
+                      <strong>Apply</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="home-focus-action">
+                  <button
+                    onClick={() => {
+                      changeActiveMode("provider");
+                      setView("provider");
+                    }}
+                  >
+                    Become a Provider
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {homeFocus === "services" && (
+              <div className="home-focus-panel single">
+                <div>
+                  <h3>Browse by service</h3>
+                  <p>Pick one service category to view matching marketplace activity.</p>
+                  <div className="service-showcase-grid">
+                    {featuredServiceCards.map((service) => (
+                      <button
+                        key={service.name}
+                        className="service-showcase-card"
+                        onClick={() => {
+                          setTaskCategory(service.name);
+                          setProviderCategory(service.name);
+                          setSearchCategory(service.name);
+                          setView("marketplace");
+                        }}
+                      >
+                        <img src={service.image} alt={`${service.name} service`} />
+                        <span>{service.name}</span>
+                        <p>{service.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {homeFocus === "status" && (
+              <div className="home-focus-panel single">
+                <div>
+                  <div className="section-header compact">
+                    <div>
+                      <h3>Marketplace snapshot</h3>
+                      <p className="muted">Live activity from the current AddisTask marketplace.</p>
+                    </div>
+                    <button onClick={refreshMarketplace}>Refresh Snapshot</button>
+                  </div>
+
+                  <div className="dashboard-grid">
+                    <div>
+                      <span>Open requests</span>
+                      <strong>{openTasks}</strong>
+                    </div>
+                    <div>
+                      <span>Total providers</span>
+                      <strong>{providers.length}</strong>
+                    </div>
+                    <div>
+                      <span>Completed jobs</span>
+                      <strong>{completedTasks.length}</strong>
+                    </div>
+                    <div>
+                      <span>Completion rate</span>
+                      <strong>{marketplaceCompletionRate}%</strong>
+                    </div>
+                    <div>
+                      <span>Avg. provider rating</span>
+                      <strong>{averageProviderRating}</strong>
+                    </div>
+                    <div>
+                      <span>Top demand</span>
+                      <strong>{topDemandCategory?.count ? topDemandCategory.service : "None yet"}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {homeFocus === "admin" && isAdmin && (
+              <div className="home-focus-panel">
+                <div>
+                  <h3>Admin review area</h3>
+                  <p>
+                    Approve providers, review marketplace supply, and monitor open
+                    customer demand.
+                  </p>
+                  <div className="dashboard-grid compact">
+                    <div>
+                      <span>Waiting approval</span>
+                      <strong>{pendingProviders.length}</strong>
+                    </div>
+                    <div>
+                      <span>Approved providers</span>
+                      <strong>{approvedProviders.length}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="home-focus-action">
+                  <button
+                    onClick={() => {
+                      setSearchCategory("");
+                      changeActiveMode("admin");
+                      setView("marketplace");
+                    }}
+                  >
+                    Open Admin Dashboard
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         </>
       )}
 
       {view === "account" && (
         <section className="card narrow">
-          <div className="form-heading">
-            <span className="eyebrow">Secure access</span>
-            <h2>Account</h2>
-            <p className="muted">Sign in to post tasks, offer services, or manage approvals.</p>
-          </div>
-
-          <label className="field-label">
-            Full name
-            <input
-              placeholder="Your name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-            />
-          </label>
-
-          <label className="field-label">
-            Phone number
-            <input
-              placeholder="09..."
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </label>
-
-          <label className="field-label">
-            Password
-            <input
-              placeholder="At least 6 characters"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-
-          {!token ? (
-            <div className="button-row">
-              <button onClick={login}>Login</button>
-              <button className="secondary-btn inline" onClick={register}>
-                Register
-              </button>
-            </div>
-          ) : (
-            <button className="logout-btn" onClick={logout}>
-              Logout
-            </button>
-          )}
+          {accountForm}
         </section>
       )}
 
@@ -1754,8 +1951,12 @@ export default function App() {
         <section className="card narrow">
           <div className="form-heading">
             <span className="eyebrow">Provider onboarding</span>
-            <h2>Become a Provider</h2>
-            <p className="muted">Create a profile customers can trust before booking.</p>
+            <h2>{myProviderProfile ? "Update Provider Profile" : "Become a Provider"}</h2>
+            <p className="muted">
+              {myProviderProfile
+                ? "Edit your provider details and resubmit them for admin review."
+                : "Create a profile customers can trust before booking."}
+            </p>
           </div>
 
           <label className="field-label">
@@ -1793,13 +1994,67 @@ export default function App() {
             </label>
           </div>
 
+          <label className="field-label">
+            Provider bio
+            <textarea
+              className="compact-textarea"
+              placeholder="Briefly describe your experience, tools, and the type of customers you serve."
+              value={providerBio}
+              onChange={(e) => setProviderBio(e.target.value)}
+            />
+          </label>
+
+          <div className="form-grid">
+            <label className="field-label">
+              Years of experience
+              <input
+                type="number"
+                min="0"
+                placeholder="e.g. 3"
+                value={providerExperienceYears}
+                onChange={(e) => setProviderExperienceYears(e.target.value)}
+              />
+            </label>
+
+            <label className="field-label">
+              Contact phone
+              <input
+                placeholder="Phone customers/admin can verify"
+                value={providerContactPhone}
+                onChange={(e) => setProviderContactPhone(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="form-grid">
+            <label className="field-label">
+              Service areas
+              <input
+                placeholder="e.g. Bole, CMC, Megenagna"
+                value={providerServiceArea}
+                onChange={(e) => setProviderServiceArea(e.target.value)}
+              />
+            </label>
+
+            <label className="field-label">
+              Availability
+              <input
+                placeholder="e.g. Weekdays, weekends, evenings"
+                value={providerAvailability}
+                onChange={(e) => setProviderAvailability(e.target.value)}
+              />
+            </label>
+          </div>
+
           <div className="provider-note">
             <strong>Approval required</strong>
             <p>After submitting, an admin must approve the provider profile before it can apply to customer tasks.</p>
           </div>
 
           <div className="form-actions">
-            <button onClick={createProvider}>Create Provider Profile</button>
+            <button onClick={createProvider}>
+              {myProviderProfile ? "Resubmit Provider Profile" : "Create Provider Profile"}
+            </button>
 
             <button
               className="secondary-btn inline"
@@ -1960,27 +2215,82 @@ export default function App() {
               )}
 
               {verificationQueue.map((provider) => (
-                <div className="row admin-review-row" key={provider.id}>
-                  <div>
-                    <strong>{provider.business_name}</strong>
-                    <p>{provider.skill_category} | {provider.city}</p>
-                    <div className="trust-list compact">
-                      <span>Rating: {provider.rating || 4.5}</span>
-                      <span>Completed: {provider.completed_tasks || 0}</span>
-                      <span>Status: {provider.approval_status}</span>
+                <div className="admin-review-card" key={provider.id}>
+                  <div className="admin-review-header">
+                    <div>
+                      <span className="eyebrow">Provider application</span>
+                      <h3>{provider.business_name}</h3>
+                      <p>{provider.skill_category} | {provider.city}</p>
+                    </div>
+
+                    <span className={`verification-pill ${provider.approval_status || "pending"}`}>
+                      {provider.approval_status || "pending"}
+                    </span>
+                  </div>
+
+                  {provider.bio && (
+                    <p className="provider-bio">{provider.bio}</p>
+                  )}
+
+                  <div className="admin-review-grid">
+                    <div>
+                      <span>Experience</span>
+                      <strong>{provider.experience_years || 0} years</strong>
+                    </div>
+                    <div>
+                      <span>Service areas</span>
+                      <strong>{provider.service_area || provider.city}</strong>
+                    </div>
+                    <div>
+                      <span>Availability</span>
+                      <strong>{provider.availability || "Not provided"}</strong>
+                    </div>
+                    <div>
+                      <span>Contact phone</span>
+                      <strong>{provider.contact_phone || "Not provided"}</strong>
+                    </div>
+                    <div>
+                      <span>ID status</span>
+                      <strong>{provider.id_verification_status || "not_submitted"}</strong>
+                    </div>
+                    <div>
+                      <span>Marketplace history</span>
+                      <strong>{provider.completed_tasks || 0} jobs | {provider.rating || 4.5} rating</strong>
                     </div>
                   </div>
 
-                  <div className="actions">
-                    <button onClick={() => updateProviderApproval(provider.id, "approved")}>
-                      Approve
-                    </button>
-                    <button
-                      className="secondary-btn inline"
-                      onClick={() => updateProviderApproval(provider.id, "rejected")}
-                    >
-                      Reject
-                    </button>
+                  <div className="admin-review-actions">
+                    <div>
+                      <strong>Review decision</strong>
+                      <p>Approve only when the profile has enough trust information for customers.</p>
+                    </div>
+
+                    <label className="admin-notes-field">
+                      Review note
+                      <textarea
+                        className="compact-textarea"
+                        placeholder="Required when rejecting. Optional approval note."
+                        value={providerApprovalNotes[provider.id] || ""}
+                        onChange={(e) =>
+                          setProviderApprovalNotes((current) => ({
+                            ...current,
+                            [provider.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <div className="actions">
+                      <button onClick={() => updateProviderApproval(provider.id, "approved")}>
+                        Approve Provider
+                      </button>
+                      <button
+                        className="secondary-btn inline"
+                        onClick={() => updateProviderApproval(provider.id, "rejected")}
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1997,7 +2307,8 @@ export default function App() {
             maxBudget={maxBudget}
             setMaxBudget={setMaxBudget}
             addisAreas={addisAreas}
-            filteredTasks={filteredTasks}
+            serviceCategories={serviceCategories}
+            tasks={tasks}
             loadMatches={loadMatches}
             applyToTask={applyToTask}
             loadApplications={loadApplications}
@@ -2007,7 +2318,80 @@ export default function App() {
             providerApprovalStatus={myProviderApprovalStatus}
           />
 
-          <MatchedProviders selectedTask={selectedTask} matches={matches} />
+          <MatchedProviders
+            selectedTask={selectedTask}
+            matches={matches}
+            openProviderProfile={openProviderProfile}
+          />
+
+          {selectedProviderProfile && (
+            <section className="card wide provider-profile-panel">
+              <div className="section-header">
+                <div>
+                  <span className="eyebrow">Provider profile</span>
+                  <h2>{selectedProviderProfile.business_name}</h2>
+                  <p className="muted">
+                    {selectedProviderProfile.skill_category} | {selectedProviderProfile.city}
+                  </p>
+                </div>
+
+                <button
+                  className="secondary-btn inline"
+                  onClick={() => setSelectedProviderProfile(null)}
+                >
+                  Close Profile
+                </button>
+              </div>
+
+              {selectedProviderProfile.bio && (
+                <p className="provider-profile-bio">{selectedProviderProfile.bio}</p>
+              )}
+
+              <div className="provider-profile-grid">
+                <div>
+                  <span>Rating</span>
+                  <strong>{selectedProviderProfile.rating || 4.5}</strong>
+                </div>
+                <div>
+                  <span>Completed jobs</span>
+                  <strong>{selectedProviderProfile.completed_tasks || 0}</strong>
+                </div>
+                <div>
+                  <span>Experience</span>
+                  <strong>{selectedProviderProfile.experience_years || 0} years</strong>
+                </div>
+                <div>
+                  <span>Response time</span>
+                  <strong>{selectedProviderProfile.response_time_minutes || 30} min</strong>
+                </div>
+                <div>
+                  <span>Service areas</span>
+                  <strong>{selectedProviderProfile.service_area || selectedProviderProfile.city || "Not provided"}</strong>
+                </div>
+                <div>
+                  <span>Availability</span>
+                  <strong>{selectedProviderProfile.availability || "Not provided"}</strong>
+                </div>
+                <div>
+                  <span>ID status</span>
+                  <strong>{selectedProviderProfile.id_verification_status || "not_submitted"}</strong>
+                </div>
+                <div>
+                  <span>Approval</span>
+                  <strong>{selectedProviderProfile.approval_status || "pending"}</strong>
+                </div>
+              </div>
+
+              <div className="profile-actions">
+                <button onClick={() => saveProvider(selectedProviderProfile)}>
+                  Save Provider
+                </button>
+                {selectedProviderProfile.contact_phone && (
+                  <span>Contact phone: {selectedProviderProfile.contact_phone}</span>
+                )}
+              </div>
+            </section>
+          )}
 
           {activeMode === "customer" && (
           <section className="card wide customer-review-card">
@@ -2068,6 +2452,12 @@ export default function App() {
                     {a.status === "pending" && (
                       <>
                         <button
+                          className="secondary-btn inline"
+                          onClick={() => openProviderProfile(a)}
+                        >
+                          View Profile
+                        </button>
+                        <button
                           onClick={() =>
                             updateApplicationStatus(a.application_id, "accepted")
                           }
@@ -2086,7 +2476,15 @@ export default function App() {
                     )}
 
                     {a.status !== "pending" && (
-                      <span className={`status-pill ${a.status}`}>{a.status}</span>
+                      <>
+                        <button
+                          className="secondary-btn inline"
+                          onClick={() => openProviderProfile(a)}
+                        >
+                          View Profile
+                        </button>
+                        <span className={`status-pill ${a.status}`}>{a.status}</span>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2133,10 +2531,24 @@ export default function App() {
                 the Apply button will be available for open tasks.
               </div>
             )}
+
+            {myProviderProfile?.approval_status === "rejected" && (
+              <div className="empty-state attention-state">
+                Your provider profile needs changes before approval.
+                {myProviderProfile.admin_notes && (
+                  <span className="provider-admin-note">
+                    Admin note: {myProviderProfile.admin_notes}
+                  </span>
+                )}
+                <button className="secondary-btn inline" onClick={loadProviderProfileIntoForm}>
+                  Edit and Resubmit
+                </button>
+              </div>
+            )}
           </section>
           )}
 
-          {activeMode === "provider" && (
+          {(activeMode === "customer" || activeMode === "provider") && (
           <section className="card wide">
             <div className="section-header">
               <div>
@@ -2168,11 +2580,29 @@ export default function App() {
                     <span>Rating: {provider.rating || 4.5}</span>
                     <span>Completed: {provider.completed_tasks || 0}</span>
                     <span>Response: {provider.response_time_minutes || 30} min</span>
+                    <span>Experience: {provider.experience_years || 0} yrs</span>
+                  </div>
+
+                  {provider.bio && (
+                    <p className="provider-bio">{provider.bio}</p>
+                  )}
+
+                  <div className="trust-list compact">
+                    {provider.service_area && <span>Areas: {provider.service_area}</span>}
+                    {provider.availability && <span>Available: {provider.availability}</span>}
+                    <span>ID: {provider.id_verification_status || "not_submitted"}</span>
                   </div>
 
                   <span className={`verification-pill ${provider.approval_status || "pending"}`}>
                     {provider.approval_status || "pending"}
                   </span>
+
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => openProviderProfile(provider)}
+                  >
+                    View Profile
+                  </button>
 
                   <button
                     className="secondary-btn inline"
@@ -2216,8 +2646,16 @@ export default function App() {
                     <span>Rating: {provider.rating || 4.5}</span>
                     <span>Completed: {provider.completed_tasks || 0}</span>
                     <span>Response: {provider.response_time_minutes || 30} min</span>
+                    <span>Experience: {provider.experience_years || 0} yrs</span>
                     <span>Status: {provider.approval_status || "pending"}</span>
                   </div>
+
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => openProviderProfile(provider)}
+                  >
+                    View Profile
+                  </button>
 
                   <button
                     className="secondary-btn inline"
