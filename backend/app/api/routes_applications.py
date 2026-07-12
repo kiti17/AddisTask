@@ -111,6 +111,7 @@ def get_my_customer_applications(
             "status": app.status,
             "task_title": task.title if task else None,
             "task_status": task.status if task else None,
+            "task_payment_status": task.payment_status if task else None,
             "provider_id": provider.id if provider else None,
             "business_name": provider.business_name if provider else None,
             "skill_category": provider.skill_category if provider else None,
@@ -157,6 +158,7 @@ def get_my_provider_applications(
             "task_location": task.location if task else None,
             "task_budget": task.budget if task else None,
             "task_status": task.status if task else None,
+            "task_payment_status": task.payment_status if task else None,
             "created_at": app.created_at
         })
 

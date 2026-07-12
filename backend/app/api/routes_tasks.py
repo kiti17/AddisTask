@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.task import Task
-from app.schemas.task import TaskCreate
+from app.schemas.task import TaskCreate, TaskPaymentUpdate
 
 from fastapi import HTTPException
 from app.models.application import Application
@@ -12,6 +12,9 @@ from app.models.user import User
 from app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+
+PAYMENT_STATUSES = {"unpaid", "cash_agreed", "paid", "disputed"}
 
 
 @router.post("/")
@@ -78,6 +81,37 @@ def complete_task(
             provider.completed_tasks = (provider.completed_tasks or 0) + 1
 
     task.status = "completed"
+    db.commit()
+    db.refresh(task)
+
+    return task
+
+
+@router.patch("/{task_id}/payment-status")
+def update_task_payment_status(
+    task_id: int,
+    payment: TaskPaymentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if payment.payment_status not in PAYMENT_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment status must be unpaid, cash_agreed, paid, or disputed"
+        )
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.customer_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the task owner can update payment status"
+        )
+
+    task.payment_status = payment.payment_status
     db.commit()
     db.refresh(task)
 

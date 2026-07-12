@@ -572,6 +572,7 @@ button:hover {
 .dashboard-grid strong {
   display: block;
   font-size: 26px;
+  overflow-wrap: anywhere;
 }
 
 .notification-center {
@@ -1212,6 +1213,27 @@ textarea {
   justify-content: flex-end;
 }
 
+.task-list-heading {
+  border-top: 1px solid #e1e7ea;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.task-list-heading.secondary {
+  margin-top: 24px;
+}
+
+.task-list-heading h3 {
+  font-size: 22px;
+  margin: 0 0 4px;
+}
+
+.task-list-heading p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
 .list {
   margin-top: 18px;
   display: flex;
@@ -1430,6 +1452,31 @@ textarea {
   color: #3d4a5c;
 }
 
+.payment-pill {
+  background: #fef3c7;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 10px;
+  text-transform: capitalize;
+}
+
+.payment-pill.paid {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.payment-pill.cash_agreed {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.payment-pill.disputed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .status-pill.accepted {
   background: #dcfce7;
   color: #166534;
@@ -1447,6 +1494,109 @@ textarea {
 
 .customer-review-card {
   border-color: #0f766e;
+}
+
+.payment-summary-card {
+  background: #fbfefd;
+  border-color: #c5e7e1;
+}
+
+.customer-next-steps-card {
+  border-color: #c5e7e1;
+}
+
+.next-step-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.next-step-grid div {
+  background: #f8fbfa;
+  border: 1px solid #d8e1df;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+}
+
+.next-step-grid span {
+  align-items: center;
+  background: #0f766e;
+  border-radius: 8px;
+  color: white;
+  display: inline-flex;
+  font-size: 18px;
+  font-weight: 900;
+  height: 36px;
+  justify-content: center;
+  width: 44px;
+}
+
+.next-step-grid strong {
+  color: #172033;
+  font-size: 17px;
+}
+
+.next-step-grid p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.payment-summary-grid div {
+  background: white;
+}
+
+.task-history-card {
+  border-color: #d8e1df;
+}
+
+.task-history-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.task-history-grid > div {
+  background: #f8fbfa;
+  border: 1px solid #d8e1df;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.task-history-grid h3 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+
+.mini-task-card {
+  background: white;
+  border: 1px solid #e3ebe9;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 12px;
+}
+
+.mini-task-card strong,
+.mini-task-card span,
+.mini-task-card small {
+  overflow-wrap: anywhere;
+}
+
+.mini-task-card span {
+  color: #3d4a5c;
+  font-weight: 700;
+}
+
+.mini-task-card small {
+  color: #667085;
+  font-weight: 700;
+  text-transform: capitalize;
 }
 
 .admin-queue-card {
@@ -1718,6 +1868,52 @@ textarea {
 .profile-actions span {
   color: #3d4a5c;
   font-weight: 800;
+}
+
+.provider-reviews {
+  border-top: 1px solid #d8e1df;
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 18px;
+}
+
+.provider-reviews h3 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.review-card {
+  background: #fbfdfc;
+  border: 1px solid #d8e1df;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.review-card div {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.review-card strong {
+  color: #0b5f59;
+  font-size: 18px;
+}
+
+.review-card span,
+.review-card small {
+  color: #667085;
+  font-weight: 800;
+}
+
+.review-card p {
+  color: #3d4a5c;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .saved-provider {
@@ -2024,6 +2220,8 @@ textarea {
   .provider-grid,
   .provider-profile-grid,
   .activity-summary,
+  .next-step-grid,
+  .task-history-grid,
   .admin-review-grid,
   .review-grid,
   .message-controls,

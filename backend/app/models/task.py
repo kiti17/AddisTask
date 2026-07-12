@@ -13,6 +13,7 @@ class Task(Base):
     location = Column(String(120), nullable=False)
     budget = Column(Float, nullable=True)
     status = Column(String(30), nullable=False, default="open")
+    payment_status = Column(String(30), nullable=False, default="unpaid")
 
     customer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 

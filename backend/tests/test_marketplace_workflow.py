@@ -103,6 +103,42 @@ def create_provider(provider_token: str):
     return body
 
 
+def create_assigned_task_flow():
+    customer = register_and_login("Customer Assigned Flow", "080")
+    provider_user = register_and_login("Provider Assigned Flow", "079")
+    admin = register_and_login("Admin Assigned Flow", "078")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+    provider = create_provider(provider_user["token"])
+
+    approval_response = client.patch(
+        f"/api/providers/{provider['id']}/approval?status=approved",
+        headers=auth_headers(admin["token"]),
+    )
+    assert approval_response.status_code == 200
+
+    application_response = client.post(
+        "/api/applications/",
+        headers=auth_headers(provider_user["token"]),
+        json={"task_id": task["id"]},
+    )
+    assert application_response.status_code == 200
+
+    accept_response = client.patch(
+        f"/api/applications/{application_response.json()['id']}/status?status=accepted",
+        headers=auth_headers(customer["token"]),
+    )
+    assert accept_response.status_code == 200
+
+    return {
+        "customer": customer,
+        "provider_user": provider_user,
+        "provider": provider,
+        "task": task,
+    }
+
+
 def test_login_returns_user_identity_and_role():
     user = register_and_login("Identity Test User", "091")
 
@@ -251,6 +287,257 @@ def test_customer_accepts_application_and_task_becomes_assigned():
     assert accept_response.status_code == 200
     assert accept_response.json()["status"] == "accepted"
     assert accept_response.json()["task_status"] == "assigned"
+
+
+def test_full_task_flow_includes_completion_and_payment_tracking():
+    customer = register_and_login("Customer Payment Flow", "087")
+    provider_user = register_and_login("Provider Payment Flow", "088")
+    admin = register_and_login("Admin Payment Flow", "086")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+    provider = create_provider(provider_user["token"])
+
+    approval_response = client.patch(
+        f"/api/providers/{provider['id']}/approval?status=approved",
+        headers=auth_headers(admin["token"]),
+    )
+    assert approval_response.status_code == 200
+
+    apply_response = client.post(
+        "/api/applications/",
+        headers=auth_headers(provider_user["token"]),
+        json={"task_id": task["id"]},
+    )
+    assert apply_response.status_code == 200
+
+    application_id = apply_response.json()["id"]
+
+    accept_response = client.patch(
+        f"/api/applications/{application_id}/status?status=accepted",
+        headers=auth_headers(customer["token"]),
+    )
+    assert accept_response.status_code == 200
+    assert accept_response.json()["task_status"] == "assigned"
+
+    provider_activity_response = client.get(
+        "/api/applications/provider/me",
+        headers=auth_headers(provider_user["token"]),
+    )
+    assert provider_activity_response.status_code == 200
+    provider_activity = provider_activity_response.json()
+    assert provider_activity[0]["status"] == "accepted"
+    assert provider_activity[0]["task_payment_status"] == "unpaid"
+
+    complete_response = client.patch(
+        f"/api/tasks/{task['id']}/complete",
+        headers=auth_headers(customer["token"]),
+    )
+    assert complete_response.status_code == 200
+    assert complete_response.json()["status"] == "completed"
+
+    provider_payment_response = client.patch(
+        f"/api/tasks/{task['id']}/payment-status",
+        headers=auth_headers(provider_user["token"]),
+        json={"payment_status": "paid"},
+    )
+    assert provider_payment_response.status_code == 403
+
+    payment_response = client.patch(
+        f"/api/tasks/{task['id']}/payment-status",
+        headers=auth_headers(customer["token"]),
+        json={"payment_status": "paid"},
+    )
+    assert payment_response.status_code == 200
+    assert payment_response.json()["payment_status"] == "paid"
+
+    updated_provider_activity_response = client.get(
+        "/api/applications/provider/me",
+        headers=auth_headers(provider_user["token"]),
+    )
+    assert updated_provider_activity_response.status_code == 200
+    assert updated_provider_activity_response.json()[0]["task_status"] == "completed"
+    assert updated_provider_activity_response.json()[0]["task_payment_status"] == "paid"
+
+
+def test_payment_status_rejects_invalid_values():
+    customer = register_and_login("Customer Invalid Payment", "085")
+    task = create_task(customer["token"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/payment-status",
+        headers=auth_headers(customer["token"]),
+        json={"payment_status": "refunded"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Payment status must be unpaid, cash_agreed, paid, or disputed"
+
+
+def test_non_owner_cannot_complete_customer_task():
+    customer = register_and_login("Customer Complete Owner", "084")
+    other_user = register_and_login("Other Complete User", "083")
+    provider_user = register_and_login("Provider Complete Flow", "082")
+    admin = register_and_login("Admin Complete Flow", "081")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+    provider = create_provider(provider_user["token"])
+
+    client.patch(
+        f"/api/providers/{provider['id']}/approval?status=approved",
+        headers=auth_headers(admin["token"]),
+    )
+
+    application = client.post(
+        "/api/applications/",
+        headers=auth_headers(provider_user["token"]),
+        json={"task_id": task["id"]},
+    )
+    assert application.status_code == 200
+
+    accept_response = client.patch(
+        f"/api/applications/{application.json()['id']}/status?status=accepted",
+        headers=auth_headers(customer["token"]),
+    )
+    assert accept_response.status_code == 200
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/complete",
+        headers=auth_headers(other_user["token"]),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only the task owner can complete this task"
+
+
+def test_messages_require_accepted_provider_and_participants():
+    customer = register_and_login("Customer Message Pending", "077")
+    provider_user = register_and_login("Provider Message Pending", "076")
+    outsider = register_and_login("Message Outsider", "075")
+    admin = register_and_login("Admin Message Pending", "074")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+    provider = create_provider(provider_user["token"])
+
+    client.patch(
+        f"/api/providers/{provider['id']}/approval?status=approved",
+        headers=auth_headers(admin["token"]),
+    )
+
+    pending_message_response = client.get(
+        f"/api/messages/task/{task['id']}",
+        headers=auth_headers(customer["token"]),
+    )
+    assert pending_message_response.status_code == 400
+    assert pending_message_response.json()["detail"] == "Messages are available after a provider is accepted"
+
+    application_response = client.post(
+        "/api/applications/",
+        headers=auth_headers(provider_user["token"]),
+        json={"task_id": task["id"]},
+    )
+    assert application_response.status_code == 200
+
+    accept_response = client.patch(
+        f"/api/applications/{application_response.json()['id']}/status?status=accepted",
+        headers=auth_headers(customer["token"]),
+    )
+    assert accept_response.status_code == 200
+
+    outsider_response = client.get(
+        f"/api/messages/task/{task['id']}",
+        headers=auth_headers(outsider["token"]),
+    )
+    assert outsider_response.status_code == 403
+    assert outsider_response.json()["detail"] == "Only the task customer and accepted provider can use messages"
+
+    customer_message_response = client.post(
+        f"/api/messages/task/{task['id']}",
+        headers=auth_headers(customer["token"]),
+        json={"body": "Please arrive after 10 AM."},
+    )
+    assert customer_message_response.status_code == 200
+    assert customer_message_response.json()["body"] == "Please arrive after 10 AM."
+
+    provider_messages_response = client.get(
+        f"/api/messages/task/{task['id']}",
+        headers=auth_headers(provider_user["token"]),
+    )
+    assert provider_messages_response.status_code == 200
+    assert provider_messages_response.json()[0]["body"] == "Please arrive after 10 AM."
+
+
+def test_review_requires_completed_task_and_only_once():
+    flow = create_assigned_task_flow()
+    customer = flow["customer"]
+    provider_user = flow["provider_user"]
+    provider = flow["provider"]
+    task = flow["task"]
+
+    early_review_response = client.post(
+        "/api/reviews/",
+        headers=auth_headers(customer["token"]),
+        json={
+            "task_id": task["id"],
+            "rating": 5,
+            "comment": "Too early",
+            "status_note": "Not completed yet",
+        },
+    )
+    assert early_review_response.status_code == 400
+    assert early_review_response.json()["detail"] == "Only completed tasks can be reviewed"
+
+    complete_response = client.patch(
+        f"/api/tasks/{task['id']}/complete",
+        headers=auth_headers(customer["token"]),
+    )
+    assert complete_response.status_code == 200
+
+    provider_review_response = client.post(
+        "/api/reviews/",
+        headers=auth_headers(provider_user["token"]),
+        json={
+            "task_id": task["id"],
+            "rating": 5,
+            "comment": "Provider cannot review own work",
+            "status_note": "Wrong user",
+        },
+    )
+    assert provider_review_response.status_code == 403
+    assert provider_review_response.json()["detail"] == "Only the task owner can review this provider"
+
+    review_response = client.post(
+        "/api/reviews/",
+        headers=auth_headers(customer["token"]),
+        json={
+            "task_id": task["id"],
+            "rating": 5,
+            "comment": "Great communication and clean work.",
+            "status_note": "Customer confirmed completion",
+        },
+    )
+    assert review_response.status_code == 200
+    assert review_response.json()["provider_id"] == provider["id"]
+    assert review_response.json()["rating"] == 5
+
+    provider_reviews_response = client.get(f"/api/reviews/provider/{provider['id']}")
+    assert provider_reviews_response.status_code == 200
+    assert provider_reviews_response.json()[0]["comment"] == "Great communication and clean work."
+
+    duplicate_review_response = client.post(
+        "/api/reviews/",
+        headers=auth_headers(customer["token"]),
+        json={
+            "task_id": task["id"],
+            "rating": 4,
+            "comment": "Trying again",
+            "status_note": "Duplicate",
+        },
+    )
+    assert duplicate_review_response.status_code == 400
+    assert duplicate_review_response.json()["detail"] == "This task already has a review"
 
 
 def test_user_cannot_apply_to_own_task():

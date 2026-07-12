@@ -17,18 +17,20 @@ AddisTask has moved from MSSE demo project to startup product. The next goal is 
 - In-app notification center
 - Messaging and reviews foundation
 - Marketplace metrics and category insights
+- Admin-only provider approval protection
+- Customer/provider/admin role-focused dashboards
+- Manual payment status tracking
+- Backend workflow tests for the core marketplace loop
 
 ### Main production gaps
 
-- Admin actions are not protected by a true admin role yet.
 - Provider verification is a prototype, not a secure operating process.
 - The frontend is concentrated in one large `App.jsx`, which makes future changes risky.
-- Database changes are partly handled by `create_all` and a manual startup `ALTER TABLE`; production needs Alembic migrations.
+- Database changes need stricter production migration discipline.
 - Production environment guards now reject unsafe secrets and localhost database URLs when `APP_ENV=production`.
-- There are no automated backend tests for the core marketplace workflow.
 - There is no rate limiting, phone verification, password reset, or account recovery.
 - There is no real external notification channel yet, such as SMS, email, or WhatsApp.
-- Payment, commission tracking, cancellation, refunds, and disputes are not implemented.
+- Payment is manually tracked, but commission reports, cancellation, refunds, and full dispute operations are not implemented.
 
 ## Phase 1: Production Foundation
 
@@ -36,32 +38,25 @@ Goal: make the existing marketplace safer and easier to maintain before inviting
 
 ### P0 - Must fix before pilot
 
-1. Add real admin authorization
-   - Add admin-only route protection.
-   - Restrict provider approval/rejection to admins.
-   - Prevent normal providers or customers from accessing platform verification controls.
+1. Keep admin authorization protected
+   - Admin-only route protection is in place.
+   - Provider approval/rejection is restricted to admins.
+   - Continue testing that normal providers and customers cannot access platform verification controls.
 
 2. Add Alembic migrations
    - Replace ad hoc schema changes with versioned migrations.
    - Create migrations for provider approval status and future production tables.
    - Document database upgrade steps.
 
-3. Add automated backend workflow tests
-   - Register/login.
-   - Customer creates task.
-   - Provider profile starts pending.
-   - Pending provider cannot apply.
-   - Admin approves provider.
-   - Provider applies.
-   - Customer accepts.
-   - Task becomes assigned.
-   - Customer completes task.
-   - Customer reviews provider.
+3. Expand automated backend workflow tests
+   - Current tests cover registration/login, provider approval protection, applying rules, customer acceptance, task completion, payment status rules, messaging permissions, and review rules.
+   - Next tests should cover task history visibility and dashboard edge cases.
 
-4. Split dashboards by role
-   - Customer dashboard: my tasks, applications, messages, reviews.
-   - Provider dashboard: my profile, approval status, available jobs, applications.
-   - Admin dashboard: verification queue and provider decisions.
+4. Continue refining dashboards by role
+   - Customer dashboard now focuses on posted tasks, applications, assigned tasks, and payment.
+   - Provider dashboard now focuses on approval status and applications.
+   - Admin dashboard keeps verification, marketplace operations, and supply/demand visibility.
+   - Next: reduce crowded sections and move repeated workflows into smaller focused pages/components.
 
 5. Harden environment configuration
    - Production guard added for `JWT_SECRET` and `DATABASE_URL`.
@@ -118,13 +113,13 @@ Goal: test business model with low operational risk.
 
 ## Recommended Next Implementation
 
-Start with P0 item 1: real admin authorization.
+Start with a repeatable manual pilot checklist and UI cleanup.
 
-Reason: provider approval is currently a production-critical trust feature, but the approval endpoint is only protected by login. Before a real pilot, normal users must not be able to approve providers.
+Reason: the core backend marketplace loop is now protected by tests, but the real startup risk is whether customers, providers, and admins can complete the flow without confusion.
 
 First implementation scope:
 
-- Add `is_admin` helper on the backend.
-- Restrict provider verification queue and approval routes to admin users.
-- Add frontend behavior that hides admin verification controls for non-admin users.
-- Add a small backend test or smoke workflow proving normal users are blocked and admins can approve.
+- Use `docs/MANUAL_TESTING_CHECKLIST.md` after each group of changes.
+- Reduce crowded customer/provider sections.
+- Keep the most important next action visible for each role.
+- Add frontend checks around task history, payment summary, and provider activity.

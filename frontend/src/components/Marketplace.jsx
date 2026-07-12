@@ -13,10 +13,25 @@ export default function Marketplace({
   applyToTask,
   loadApplications,
   completeTask,
+  updateTaskPaymentStatus,
   activeMode,
   currentUserId,
   providerApprovalStatus,
 }) {
+  const sortedTasks = [...tasks].sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+
+    if (dateA !== dateB) return dateB - dateA;
+    return (b.id || 0) - (a.id || 0);
+  });
+  const myPostedTasks = sortedTasks.filter(
+    (task) => currentUserId && task.customer_id === currentUserId
+  );
+  const otherTasks = sortedTasks.filter(
+    (task) => !currentUserId || task.customer_id !== currentUserId
+  );
+  const shouldSplitCustomerTasks = activeMode === "customer" && currentUserId;
   const workflowSteps = [
     "Posted",
     "Provider applied",
@@ -135,14 +150,79 @@ export default function Marketplace({
         ))}
       </div>
 
+      {shouldSplitCustomerTasks ? (
+        <>
+          <div className="task-list-heading">
+            <div>
+              <h3>My Posted Tasks</h3>
+              <p>Tasks you created appear here first, newest on top.</p>
+            </div>
+          </div>
+
+          <div className="list">
+            {myPostedTasks.length === 0 && (
+              <div className="empty-state">
+                You have not posted any tasks yet.
+              </div>
+            )}
+
+            {myPostedTasks.map((t) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                details={getTaskDetails(t.description)}
+                loadMatches={loadMatches}
+                applyToTask={applyToTask}
+                loadApplications={loadApplications}
+                completeTask={completeTask}
+                updateTaskPaymentStatus={updateTaskPaymentStatus}
+                activeMode={activeMode}
+                currentUserId={currentUserId}
+                providerApprovalStatus={providerApprovalStatus}
+              />
+            ))}
+          </div>
+
+          <div className="task-list-heading secondary">
+            <div>
+              <h3>Other Customer Tasks</h3>
+              <p>These are tasks posted by other customers.</p>
+            </div>
+          </div>
+
+          <div className="list">
+            {otherTasks.length === 0 && (
+              <div className="empty-state">
+                No other customer tasks are posted yet.
+              </div>
+            )}
+
+            {otherTasks.map((t) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                details={getTaskDetails(t.description)}
+                loadMatches={loadMatches}
+                applyToTask={applyToTask}
+                loadApplications={loadApplications}
+                completeTask={completeTask}
+                updateTaskPaymentStatus={updateTaskPaymentStatus}
+                activeMode={activeMode}
+                currentUserId={currentUserId}
+                providerApprovalStatus={providerApprovalStatus}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
       <div className="list">
-        {tasks.length === 0 && (
+        {sortedTasks.length === 0 && (
           <div className="empty-state">
             No tasks have been posted yet.
           </div>
         )}
 
-        {tasks.map((t) => (
+        {sortedTasks.map((t) => (
           <TaskRow
             key={t.id}
             task={t}
@@ -151,12 +231,14 @@ export default function Marketplace({
             applyToTask={applyToTask}
             loadApplications={loadApplications}
             completeTask={completeTask}
+            updateTaskPaymentStatus={updateTaskPaymentStatus}
             activeMode={activeMode}
             currentUserId={currentUserId}
             providerApprovalStatus={providerApprovalStatus}
           />
         ))}
       </div>
+      )}
     </section>
   );
 }
@@ -168,6 +250,7 @@ function TaskRow({
   applyToTask,
   loadApplications,
   completeTask,
+  updateTaskPaymentStatus,
   activeMode,
   currentUserId,
   providerApprovalStatus,
@@ -184,6 +267,13 @@ function TaskRow({
     assigned: "Provider accepted",
     completed: "Completed",
   }[currentStatus] || task.status;
+  const paymentStatus = task.payment_status || "unpaid";
+  const paymentLabel = {
+    unpaid: "Payment: unpaid",
+    cash_agreed: "Payment: cash agreed",
+    paid: "Payment: paid",
+    disputed: "Payment: disputed",
+  }[paymentStatus] || "Payment: unpaid";
   const roleLabel = isOwnTask
     ? "Your task"
     : isProvider
@@ -209,6 +299,9 @@ function TaskRow({
               {statusLabel}
             </span>
             <span className="status-pill neutral">{roleLabel}</span>
+            <span className={`payment-pill ${paymentStatus}`}>
+              {paymentLabel}
+            </span>
           </div>
         </div>
 
@@ -280,6 +373,26 @@ function TaskRow({
             {task.status?.toLowerCase().trim() === "assigned" && (
               <button onClick={() => completeTask(task.id)}>Complete</button>
             )}
+
+            <span className="action-help">Payment</span>
+            <button
+              className="secondary-btn inline"
+              onClick={() => updateTaskPaymentStatus(task.id, "cash_agreed")}
+            >
+              Cash Agreed
+            </button>
+            <button
+              className="secondary-btn inline"
+              onClick={() => updateTaskPaymentStatus(task.id, "paid")}
+            >
+              Mark Paid
+            </button>
+            <button
+              className="secondary-btn inline"
+              onClick={() => updateTaskPaymentStatus(task.id, "disputed")}
+            >
+              Disputed
+            </button>
           </>
         )}
 

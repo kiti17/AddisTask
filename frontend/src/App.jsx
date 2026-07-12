@@ -274,6 +274,7 @@ export default function App() {
   const [providers, setProviders] = useState([]);
   const [myProviderProfile, setMyProviderProfile] = useState(null);
   const [selectedProviderProfile, setSelectedProviderProfile] = useState(null);
+  const [selectedProviderReviews, setSelectedProviderReviews] = useState([]);
   const [verificationQueue, setVerificationQueue] = useState([]);
   const [providerApprovalNotes, setProviderApprovalNotes] = useState({});
   const [marketplaceSyncedAt, setMarketplaceSyncedAt] = useState("");
@@ -289,13 +290,88 @@ export default function App() {
   const isAdmin = currentUserRole === "admin";
 
   const getErrorMessage = (err, fallback) => {
+    if (!err.response) {
+      return "Cannot reach the backend server. Make sure the backend is running on http://127.0.0.1:8000.";
+    }
+
     const detail = err.response?.data?.detail;
+    const friendlyMessages = {
+      "Only the task owner can complete this task":
+        "Only the customer who posted this task can mark it completed.",
+      "Only assigned tasks can be completed":
+        "This task must be assigned to a provider before it can be completed.",
+      "Only the task owner can update payment status":
+        "Only the customer who posted this task can update payment status.",
+      "Payment status must be unpaid, cash_agreed, paid, or disputed":
+        "Choose a valid payment status: unpaid, cash agreed, paid, or disputed.",
+      "Only the task owner can update application status":
+        "Only the customer who posted this task can accept or reject applications.",
+      "Only the task owner can view applications for this task":
+        "Only the customer who posted this task can view provider applications.",
+      "Only open tasks can accept a provider":
+        "This task is no longer open, so another provider cannot be accepted.",
+      "Providers can only apply to open tasks":
+        "This task is no longer open for new provider applications.",
+      "Provider skill does not match this task category":
+        "Your provider profile service does not match this task category.",
+      "You already applied to this task":
+        "You already applied to this task.",
+      "You cannot apply to your own task":
+        "You cannot apply to your own task. Switch to Customer Mode to review applications.",
+      "Your provider profile must be approved before you can apply to tasks":
+        "Your provider profile must be approved before you can apply to tasks.",
+      "You must create a provider profile before applying to tasks":
+        "Create a provider profile before applying to tasks.",
+      "Create a provider profile before viewing applications":
+        "Create a provider profile before viewing provider activity.",
+      "Messages are available after a provider is accepted":
+        "Messages become available after the customer accepts a provider.",
+      "Only the task customer and accepted provider can use messages":
+        "Only the task customer and accepted provider can use messages for this task.",
+      "Only completed tasks can be reviewed":
+        "You can review a provider only after the task is completed.",
+      "Only the task owner can review this provider":
+        "Only the customer who posted this task can review the provider.",
+      "This task already has a review":
+        "This task already has a review.",
+      "No accepted provider found for this task":
+        "Accept a provider before leaving a review.",
+      "Provider profile already exists for this user":
+        "You already have a provider profile. Use Update Provider Profile instead.",
+      "Invalid credentials":
+        "The phone number or password is incorrect.",
+      "Phone already registered":
+        "This phone number is already registered. Please log in instead.",
+    };
 
     if (Array.isArray(detail)) {
       return detail.map((item) => item.msg).join("\n");
     }
 
-    return detail || fallback;
+    return friendlyMessages[detail] || detail || fallback;
+  };
+
+  const applyLoginSession = (data) => {
+    sessionStorage.setItem("token", data.access_token);
+    sessionStorage.setItem("currentUser", data.full_name || data.phone);
+    sessionStorage.setItem("currentUserId", String(data.user_id || 0));
+    const nextRole = data.role || "customer";
+    const nextMode = nextRole === "admin" ? "admin" : "customer";
+
+    sessionStorage.setItem("currentUserRole", nextRole);
+    sessionStorage.setItem("activeMode", nextMode);
+
+    setToken(data.access_token);
+    setCurrentUser(data.full_name || data.phone);
+    setCurrentUserId(Number(data.user_id || 0));
+    setCurrentUserRole(nextRole);
+    setActiveMode(nextMode);
+
+    setFullName("");
+    setPhone("");
+    setPassword("");
+    setIsAccountModalOpen(false);
+    setView(nextMode === "admin" ? "marketplace" : "home");
   };
 
   const getRefreshTime = () =>
@@ -339,14 +415,21 @@ export default function App() {
       if (!fullName.trim()) return alert("Enter your full name.");
       if (!phone.trim()) return alert("Enter your phone number.");
       if (password.length < 6) return alert("Password must be at least 6 characters.");
+      const cleanPhone = phone.trim();
 
       await api.post("/api/auth/register", {
-        full_name: fullName,
-        phone,
+        full_name: fullName.trim(),
+        phone: cleanPhone,
         password,
       });
 
-      alert("Registration successful. You can now login.");
+      const loginResponse = await api.post("/api/auth/login", {
+        phone: cleanPhone,
+        password,
+      });
+
+      applyLoginSession(loginResponse.data);
+      alert("Registration successful. You are logged in.");
     } catch (err) {
       alert(getErrorMessage(err, "Registration failed"));
     }
@@ -356,34 +439,15 @@ export default function App() {
     try {
       if (!phone.trim()) return alert("Enter your phone number.");
       if (password.length < 6) return alert("Password must be at least 6 characters.");
+      const cleanPhone = phone.trim();
 
       const res = await api.post("/api/auth/login", {
-        phone,
+        phone: cleanPhone,
         password,
       });
 
-      sessionStorage.setItem("token", res.data.access_token);
-      sessionStorage.setItem("currentUser", res.data.full_name || fullName || phone);
-      sessionStorage.setItem("currentUserId", String(res.data.user_id || 0));
-      const nextRole = res.data.role || "customer";
-      const nextMode = nextRole === "admin" ? "admin" : "customer";
-
-      sessionStorage.setItem("currentUserRole", nextRole);
-      sessionStorage.setItem("activeMode", nextMode);
-
-      setToken(res.data.access_token);
-      setCurrentUser(res.data.full_name || fullName || phone);
-      setCurrentUserId(Number(res.data.user_id || 0));
-      setCurrentUserRole(nextRole);
-      setActiveMode(nextMode);
-
-      setFullName("");
-      setPhone("");
-      setPassword("");
-
+      applyLoginSession(res.data);
       alert("Logged in successfully");
-      setIsAccountModalOpen(false);
-      setView(nextMode === "admin" ? "marketplace" : "home");
     } catch (err) {
       alert(getErrorMessage(err, "Login failed"));
     }
@@ -411,7 +475,7 @@ export default function App() {
       const res = await api.get("/api/tasks/");
       setTasks(res.data);
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Failed to load tasks"));
+      alert(getErrorMessage(err, "Failed to load tasks"));
     }
   };
 
@@ -420,7 +484,7 @@ export default function App() {
       const res = await api.get("/api/providers/");
       setProviders(res.data);
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Failed to load providers"));
+      alert(getErrorMessage(err, "Failed to load providers"));
     }
   };
 
@@ -617,7 +681,7 @@ export default function App() {
     });
   };
 
-  const openProviderProfile = (provider) => {
+  const openProviderProfile = async (provider) => {
     const providerId = provider.id || provider.provider_id;
     const fullProvider = providers.find((item) => item.id === providerId);
 
@@ -626,6 +690,18 @@ export default function App() {
       ...provider,
       id: providerId,
     });
+
+    if (!providerId || providerId < 0) {
+      setSelectedProviderReviews([]);
+      return;
+    }
+
+    try {
+      const res = await api.get(`/api/reviews/provider/${providerId}`);
+      setSelectedProviderReviews(res.data);
+    } catch {
+      setSelectedProviderReviews([]);
+    }
   };
 
   const removeSavedProvider = (providerId) => {
@@ -664,6 +740,8 @@ export default function App() {
       );
 
       alert("Task posted. Providers can now apply.");
+      setSearchCategory(taskCategory);
+      setSearchLocation(taskLocation);
 
       setTaskTitle("");
       setTaskDescription("");
@@ -677,7 +755,7 @@ export default function App() {
       await loadCustomerApplications();
       setView("marketplace");
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Task creation failed"));
+      alert(getErrorMessage(err, "Task creation failed"));
     }
   };
 
@@ -723,7 +801,7 @@ export default function App() {
       await loadMyProviderProfile();
       setView("marketplace");
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Provider creation failed"));
+      alert(getErrorMessage(err, "Provider creation failed"));
     }
   };
 
@@ -781,7 +859,7 @@ export default function App() {
       const res = await api.get(`/api/providers/match/${taskId}`);
       setMatches(res.data);
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Failed to load matches"));
+      alert(getErrorMessage(err, "Failed to load matches"));
     }
   };
 
@@ -845,7 +923,7 @@ export default function App() {
       alert("Application sent to the customer.");
       await loadProviderApplications();
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Apply failed"));
+      alert(getErrorMessage(err, "Apply failed"));
     }
   };
 
@@ -1042,7 +1120,7 @@ export default function App() {
       await loadTasks();
       await loadCustomerApplications();
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Application update failed"));
+      alert(getErrorMessage(err, "Application update failed"));
     }
   };
 
@@ -1074,7 +1152,35 @@ export default function App() {
       await loadTasks();
       await loadCustomerApplications();
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Complete task failed"));
+      alert(getErrorMessage(err, "Complete task failed"));
+    }
+  };
+
+  const updateTaskPaymentStatus = async (taskId, paymentStatus) => {
+    try {
+      if (taskId < 0) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === taskId ? { ...task, payment_status: paymentStatus } : task
+          )
+        );
+        return alert("Demo payment status updated.");
+      }
+
+      if (!token) {
+        setView("account");
+        return alert("Login first to update payment status.");
+      }
+
+      await api.patch(
+        `/api/tasks/${taskId}/payment-status`,
+        { payment_status: paymentStatus },
+        authHeader
+      );
+
+      await loadTasks();
+    } catch (err) {
+      alert(getErrorMessage(err, "Payment status update failed"));
     }
   };
 
@@ -1107,7 +1213,7 @@ export default function App() {
       setReviewComment("");
       await loadTasks();
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Review failed"));
+      alert(getErrorMessage(err, "Review failed"));
     }
   };
 
@@ -1126,7 +1232,7 @@ export default function App() {
       setTaskMessages(res.data);
       setMessageTaskId(String(taskId));
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Failed to load messages"));
+      alert(getErrorMessage(err, "Failed to load messages"));
     }
   };
 
@@ -1154,7 +1260,7 @@ export default function App() {
       setMessageBody("");
       await loadMessages(messageTaskId);
     } catch (err) {
-      alert(JSON.stringify(err.response?.data?.detail || "Message failed"));
+      alert(getErrorMessage(err, "Message failed"));
     }
   };
 
@@ -1167,6 +1273,18 @@ export default function App() {
   );
   const myCompletedTasks = tasks.filter(
     (task) => task.customer_id === currentUserId && task.status === "completed"
+  );
+  const myPostedTasks = tasks.filter((task) => task.customer_id === currentUserId);
+  const myOpenTasks = myPostedTasks.filter((task) => task.status === "open");
+  const customerPaymentSummary = myPostedTasks.reduce(
+    (summary, task) => {
+      const status = task.payment_status || "unpaid";
+      return {
+        ...summary,
+        [status]: (summary[status] || 0) + 1,
+      };
+    },
+    { unpaid: 0, cash_agreed: 0, paid: 0, disputed: 0 }
   );
   const selectedGuidance = serviceGuidance[taskCategory] || serviceGuidance.Cleaning;
   const taskBudgetValue = Number(taskBudget || 0);
@@ -1196,6 +1314,9 @@ export default function App() {
   const acceptedProviderApplications = providerApplications.filter(
     (application) => application.status === "accepted"
   );
+  const acceptedProviderTaskIds = new Set(
+    acceptedProviderApplications.map((application) => Number(application.task_id))
+  );
   const pendingProviderApplications = providerApplications.filter(
     (application) => application.status === "pending"
   );
@@ -1204,6 +1325,20 @@ export default function App() {
   );
   const pendingCustomerApplications = customerApplications.filter(
     (application) => application.status === "pending"
+  );
+  const messageEligibleTasks = activeAssignedTasks.filter((task) => {
+    if (activeMode === "customer") {
+      return task.customer_id === currentUserId;
+    }
+
+    if (activeMode === "provider") {
+      return acceptedProviderTaskIds.has(Number(task.id));
+    }
+
+    return false;
+  });
+  const customerReviewTasks = completedTasks.filter(
+    (task) => task.customer_id === currentUserId
   );
   const customerNotifications = [
     {
@@ -2074,53 +2209,129 @@ export default function App() {
           <section className="dashboard-panel">
             <div className="section-header">
               <div>
-                <h2>Marketplace Operations</h2>
+                <h2>
+                  {activeMode === "admin" ? "Marketplace Operations" : "Today on AddisTask"}
+                </h2>
                 <p className="muted">
-                  Live operating view for tasks, providers, completion, and demand.
+                  {activeMode === "admin"
+                    ? "Live operating view for tasks, providers, completion, and demand."
+                    : activeMode === "customer"
+                      ? "Track your posted tasks, provider applications, and payment progress."
+                      : "Track your approval status, applications, and accepted work."}
                 </p>
               </div>
 
               <div className="toolbar-actions">
-                <button onClick={refreshMarketplace}>Refresh All</button>
-                <button className="secondary-btn inline" onClick={loadDemoData}>
-                  Load Demo Data
-                </button>
-                <button className="secondary-btn inline" onClick={clearDemoData}>
-                  Clear Demo
-                </button>
+                <button onClick={refreshMarketplace}>Refresh</button>
+                {activeMode === "customer" && (
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => {
+                      changeActiveMode("customer");
+                      setView("customer");
+                    }}
+                  >
+                    Post Task
+                  </button>
+                )}
+                {activeMode === "provider" && (
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => {
+                      changeActiveMode("provider");
+                      setView("provider");
+                    }}
+                  >
+                    Provider Profile
+                  </button>
+                )}
+                {activeMode === "admin" && (
+                  <>
+                    <button className="secondary-btn inline" onClick={loadDemoData}>
+                      Load Demo Data
+                    </button>
+                    <button className="secondary-btn inline" onClick={clearDemoData}>
+                      Clear Demo
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
-            <div className="dashboard-grid">
-              <div>
-                <span>Open requests</span>
-                <strong>{openTasks}</strong>
+            {activeMode === "customer" && (
+              <div className="dashboard-grid">
+                <div>
+                  <span>My open tasks</span>
+                  <strong>{myOpenTasks.length}</strong>
+                </div>
+                <div>
+                  <span>Applications waiting</span>
+                  <strong>{pendingCustomerApplications.length}</strong>
+                </div>
+                <div>
+                  <span>Assigned tasks</span>
+                  <strong>{myAssignedTasks.length}</strong>
+                </div>
+                <div>
+                  <span>Unpaid tasks</span>
+                  <strong>{customerPaymentSummary.unpaid}</strong>
+                </div>
               </div>
-              <div>
-                <span>Assigned jobs</span>
-                <strong>{assignedTasks}</strong>
+            )}
+
+            {activeMode === "provider" && (
+              <div className="dashboard-grid">
+                <div>
+                  <span>Approval</span>
+                  <strong>{myProviderApprovalStatus}</strong>
+                </div>
+                <div>
+                  <span>Accepted</span>
+                  <strong>{acceptedProviderApplications.length}</strong>
+                </div>
+                <div>
+                  <span>Pending</span>
+                  <strong>{pendingProviderApplications.length}</strong>
+                </div>
+                <div>
+                  <span>Rejected</span>
+                  <strong>{rejectedProviderApplications.length}</strong>
+                </div>
               </div>
-              <div>
-                <span>Completed jobs</span>
-                <strong>{completedTasks.length}</strong>
+            )}
+
+            {activeMode === "admin" && (
+              <div className="dashboard-grid">
+                <div>
+                  <span>Open requests</span>
+                  <strong>{openTasks}</strong>
+                </div>
+                <div>
+                  <span>Assigned jobs</span>
+                  <strong>{assignedTasks}</strong>
+                </div>
+                <div>
+                  <span>Completed jobs</span>
+                  <strong>{completedTasks.length}</strong>
+                </div>
+                <div>
+                  <span>Provider supply</span>
+                  <strong>{approvedProviders.length}/{providers.length}</strong>
+                </div>
+                <div>
+                  <span>Pending verification</span>
+                  <strong>{pendingProviders.length}</strong>
+                </div>
+                <div>
+                  <span>Avg. rating</span>
+                  <strong>{averageProviderRating}</strong>
+                </div>
+                <div>
+                  <span>Est. platform revenue</span>
+                  <strong>{estimatedMarketplaceRevenue} birr</strong>
+                </div>
               </div>
-              <div>
-                <span>Provider supply</span>
-                <strong>{approvedProviders.length}/{providers.length}</strong>
-              </div>
-              <div>
-                <span>Pending verification</span>
-                <strong>{pendingProviders.length}</strong>
-              </div>
-              <div>
-                <span>Avg. rating</span>
-                <strong>{averageProviderRating}</strong>
-              </div>
-              <div>
-                <span>Est. platform revenue</span>
-                <strong>{estimatedMarketplaceRevenue} birr</strong>
-              </div>
-            </div>
+            )}
 
             <div className="notification-center">
               <div>
@@ -2158,16 +2369,18 @@ export default function App() {
               ))}
             </div>
 
-            <div className="category-insights">
-              {categoryInsights.map((item) => (
-                <div className="insight-row" key={item.service}>
-                  <strong>{item.service}</strong>
-                  <span>Demand: {item.demand}</span>
-                  <span>Supply: {item.supply}</span>
-                  <em>{item.status}</em>
-                </div>
-              ))}
-            </div>
+            {activeMode === "admin" && (
+              <div className="category-insights">
+                {categoryInsights.map((item) => (
+                  <div className="insight-row" key={item.service}>
+                    <strong>{item.service}</strong>
+                    <span>Demand: {item.demand}</span>
+                    <span>Supply: {item.supply}</span>
+                    <em>{item.status}</em>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {activeMode === "admin" && isAdmin && (
@@ -2313,10 +2526,139 @@ export default function App() {
             applyToTask={applyToTask}
             loadApplications={loadApplications}
             completeTask={completeTask}
+            updateTaskPaymentStatus={updateTaskPaymentStatus}
             activeMode={activeMode}
             currentUserId={currentUserId}
             providerApprovalStatus={myProviderApprovalStatus}
           />
+
+          {activeMode === "customer" && (
+            <section className="card wide customer-next-steps-card">
+              <div className="section-header">
+                <div>
+                  <h2>Customer Next Steps</h2>
+                  <p className="muted">
+                    Focus on the work that needs your attention first.
+                  </p>
+                </div>
+              </div>
+
+              <div className="next-step-grid">
+                <div>
+                  <span>{pendingCustomerApplications.length}</span>
+                  <strong>Review applications</strong>
+                  <p>Accept the best provider for your posted tasks.</p>
+                </div>
+                <div>
+                  <span>{myAssignedTasks.length}</span>
+                  <strong>Coordinate assigned work</strong>
+                  <p>Use messages and complete the task after the work is done.</p>
+                </div>
+                <div>
+                  <span>{customerPaymentSummary.unpaid + customerPaymentSummary.cash_agreed}</span>
+                  <strong>Track payment</strong>
+                  <p>Update unpaid or cash-agreed jobs as the work progresses.</p>
+                </div>
+                <div>
+                  <span>{customerReviewTasks.length}</span>
+                  <strong>Leave reviews</strong>
+                  <p>Review completed jobs to build provider trust.</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeMode === "customer" && (
+            <section className="card wide payment-summary-card">
+              <div className="section-header">
+                <div>
+                  <h2>Payment Summary</h2>
+                  <p className="muted">
+                    A quick view of payment progress for your posted tasks.
+                  </p>
+                </div>
+              </div>
+
+              <div className="activity-summary payment-summary-grid">
+                <div>
+                  <span>Unpaid</span>
+                  <strong>{customerPaymentSummary.unpaid}</strong>
+                </div>
+                <div>
+                  <span>Cash agreed</span>
+                  <strong>{customerPaymentSummary.cash_agreed}</strong>
+                </div>
+                <div>
+                  <span>Paid</span>
+                  <strong>{customerPaymentSummary.paid}</strong>
+                </div>
+                <div>
+                  <span>Disputed</span>
+                  <strong>{customerPaymentSummary.disputed}</strong>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeMode === "customer" && (
+            <section className="card wide task-history-card">
+              <div className="section-header">
+                <div>
+                  <h2>My Task History</h2>
+                  <p className="muted">
+                    Follow your posted work from new request to assigned job and completion.
+                  </p>
+                </div>
+              </div>
+
+              <div className="task-history-grid">
+                <div>
+                  <h3>Open</h3>
+                  {myOpenTasks.length === 0 ? (
+                    <p className="muted">No open posted tasks.</p>
+                  ) : (
+                    myOpenTasks.slice(0, 4).map((task) => (
+                      <article className="mini-task-card" key={task.id}>
+                        <strong>{task.title}</strong>
+                        <span>{task.category} | {task.budget || 0} birr</span>
+                        <small>{task.location || "Addis Ababa"}</small>
+                      </article>
+                    ))
+                  )}
+                </div>
+
+                <div>
+                  <h3>Assigned</h3>
+                  {myAssignedTasks.length === 0 ? (
+                    <p className="muted">No assigned tasks right now.</p>
+                  ) : (
+                    myAssignedTasks.slice(0, 4).map((task) => (
+                      <article className="mini-task-card" key={task.id}>
+                        <strong>{task.title}</strong>
+                        <span>{task.category} | {task.budget || 0} birr</span>
+                        <small>Payment: {(task.payment_status || "unpaid").replace("_", " ")}</small>
+                      </article>
+                    ))
+                  )}
+                </div>
+
+                <div>
+                  <h3>Completed</h3>
+                  {myCompletedTasks.length === 0 ? (
+                    <p className="muted">No completed tasks yet.</p>
+                  ) : (
+                    myCompletedTasks.slice(0, 4).map((task) => (
+                      <article className="mini-task-card" key={task.id}>
+                        <strong>{task.title}</strong>
+                        <span>{task.category} | {task.budget || 0} birr</span>
+                        <small>Payment: {(task.payment_status || "unpaid").replace("_", " ")}</small>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
 
           <MatchedProviders
             selectedTask={selectedTask}
@@ -2337,7 +2679,10 @@ export default function App() {
 
                 <button
                   className="secondary-btn inline"
-                  onClick={() => setSelectedProviderProfile(null)}
+                  onClick={() => {
+                    setSelectedProviderProfile(null);
+                    setSelectedProviderReviews([]);
+                  }}
                 >
                   Close Profile
                 </button>
@@ -2389,6 +2734,40 @@ export default function App() {
                 {selectedProviderProfile.contact_phone && (
                   <span>Contact phone: {selectedProviderProfile.contact_phone}</span>
                 )}
+              </div>
+
+              <div className="provider-reviews">
+                <div className="section-header compact">
+                  <div>
+                    <h3>Customer reviews</h3>
+                    <p className="muted">
+                      Reviews from completed AddisTask jobs help customers compare providers.
+                    </p>
+                  </div>
+                </div>
+
+                {selectedProviderReviews.length === 0 && (
+                  <div className="empty-state">
+                    No customer reviews yet.
+                  </div>
+                )}
+
+                {selectedProviderReviews.map((review) => (
+                  <div className="review-card" key={review.id}>
+                    <div>
+                      <strong>{review.rating}/5</strong>
+                      {review.created_at && (
+                        <span>
+                          {new Date(review.created_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <p>{review.comment || "No written comment."}</p>
+                    {review.status_note && (
+                      <small>{review.status_note}</small>
+                    )}
+                  </div>
+                ))}
               </div>
             </section>
           )}
@@ -2554,18 +2933,32 @@ export default function App() {
               <div>
                 <h2>Provider Directory</h2>
                 <p className="muted">
-                  Browse trusted local providers by service, rating, completed jobs,
-                  and response time.
+                  {searchCategory || searchLocation
+                    ? `Showing providers related to ${searchCategory || "all services"} in ${searchLocation || "all areas"}.`
+                    : "Browse trusted local providers by service, rating, completed jobs, and response time."}
                 </p>
               </div>
 
-              <button onClick={loadProviders}>Load Providers</button>
+              <div className="toolbar-actions">
+                <button onClick={loadProviders}>Load Providers</button>
+                {(searchCategory || searchLocation) && (
+                  <button
+                    className="secondary-btn inline"
+                    onClick={() => {
+                      setSearchCategory("");
+                      setSearchLocation("");
+                    }}
+                  >
+                    Show All Providers
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="provider-grid">
               {filteredProviders.length === 0 && (
                 <div className="empty-state">
-                  Load providers or choose another service category.
+                  No providers match the selected service and area yet.
                 </div>
               )}
 
@@ -2720,6 +3113,9 @@ export default function App() {
                     </p>
                     <div className="trust-list compact">
                       <span>Task: {application.task_status || "open"}</span>
+                      <span>
+                        Payment: {(application.task_payment_status || "unpaid").replace("_", " ")}
+                      </span>
                       <span>Application ID: {application.application_id}</span>
                     </div>
                     <p className="application-notice">
@@ -2748,7 +3144,7 @@ export default function App() {
               </div>
             </div>
 
-            {activeAssignedTasks.length === 0 ? (
+            {messageEligibleTasks.length === 0 ? (
               <div className="empty-state">
                 Assigned tasks will appear here after a customer accepts a provider.
               </div>
@@ -2763,7 +3159,7 @@ export default function App() {
                     }}
                   >
                     <option value="">Select assigned task</option>
-                    {activeAssignedTasks.map((task) => (
+                    {messageEligibleTasks.map((task) => (
                       <option key={task.id} value={task.id}>
                         {task.title}
                       </option>
@@ -2814,7 +3210,7 @@ export default function App() {
               </div>
             </div>
 
-            {completedTasks.length === 0 ? (
+            {customerReviewTasks.length === 0 ? (
               <div className="empty-state">
                 Completed tasks will appear here for customer review.
               </div>
@@ -2825,7 +3221,7 @@ export default function App() {
                   onChange={(e) => setReviewTaskId(e.target.value)}
                 >
                   <option value="">Select completed task</option>
-                  {completedTasks.map((task) => (
+                  {customerReviewTasks.map((task) => (
                     <option key={task.id} value={task.id}>
                       {task.title}
                     </option>
