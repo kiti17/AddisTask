@@ -1505,6 +1505,10 @@ textarea {
   border-color: #c5e7e1;
 }
 
+.provider-next-steps-card {
+  border-color: #c5e7e1;
+}
+
 .next-step-grid {
   display: grid;
   gap: 14px;
@@ -1721,6 +1725,12 @@ textarea {
 .attention-state {
   border-color: #f59e0b;
   color: #92400e;
+  margin-top: 18px;
+}
+
+.success-state {
+  border-color: #16a34a;
+  color: #166534;
   margin-top: 18px;
 }
 

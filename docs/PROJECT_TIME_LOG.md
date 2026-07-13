@@ -124,3 +124,75 @@ This log tracks development effort as AddisTask moves from MSSE project to start
 - Outcome: Added a Customer Next Steps panel and narrowed Messages and Reviews to tasks relevant to the logged-in customer or provider role.
 - Business value added: Helps customers understand what to do next and reduces confusing task choices in messages and reviews.
 - Next recommended step: Continue provider-side UI clarity by making approval status, matching tasks, and application activity easier to scan.
+
+### 2026-07-12
+
+- Session focus: Improve provider marketplace clarity.
+- Time spent: Estimated 25 minutes.
+- Outcome: Added a Provider Next Steps panel, made matching task counts actionable only after approval, and improved provider verification guidance for no profile, pending, approved, and rejected states.
+- Business value added: Helps providers understand whether they can apply, which work matches them, and where to check customer decisions.
+- Next recommended step: Do a browser pass for provider mode, then continue reducing crowded secondary sections.
+
+### 2026-07-12 Continued
+
+- Session focus: Reduce secondary section crowding.
+- Time spent: Estimated 15 minutes.
+- Outcome: Removed customer-oriented Provider Directory and Saved Providers sections from provider mode, and hid Saved Providers from customer mode until at least one provider is saved.
+- Business value added: Keeps each role focused on the work that matters and makes the marketplace page less overwhelming.
+- Next recommended step: Start splitting the large frontend into smaller role-focused components to make future changes safer.
+
+### 2026-07-12 Continued 2
+
+- Session focus: Split customer dashboard frontend code.
+- Time spent: Estimated 25 minutes.
+- Outcome: Extracted customer next steps, payment summary, task history, and application review into a dedicated `CustomerDashboard` component.
+- Business value added: Reduces risk in future frontend changes by separating customer workflow UI from the large main app file.
+- Next recommended step: Extract provider workflow UI into a dedicated `ProviderDashboard` component.
+
+### 2026-07-12 Continued 3
+
+- Session focus: Split provider dashboard frontend code.
+- Time spent: Estimated 25 minutes.
+- Outcome: Extracted provider next steps, provider verification, and provider activity into a dedicated `ProviderDashboard` component.
+- Business value added: Makes provider workflow changes safer and keeps the main app file less crowded.
+- Next recommended step: Extract shared messaging and review sections into smaller reusable components.
+
+### 2026-07-12 Continued 4
+
+- Session focus: Split messaging and review frontend code.
+- Time spent: Estimated 20 minutes.
+- Outcome: Extracted shared Messages and customer Reviews sections into dedicated `MessagePanel` and `ReviewPanel` components.
+- Business value added: Reduces the size of the main app file and makes communication/review workflows easier to improve safely.
+- Next recommended step: Extract provider profile display and saved-provider/directory sections, or start a browser pass of the cleaned role flows.
+
+### 2026-07-12 Continued 5
+
+- Session focus: Split provider profile and directory frontend code.
+- Time spent: Estimated 25 minutes.
+- Outcome: Extracted provider profile display, provider directory, and saved providers into dedicated `ProviderProfilePanel` and `ProviderDirectoryPanel` components.
+- Business value added: Makes provider trust/profile UI easier to maintain and reduces the risk of editing the large main app file.
+- Next recommended step: Run a browser pass of the cleaned customer, provider, and admin flows.
+
+### 2026-07-12 Continued 6
+
+- Session focus: Browser pass for cleaned role views.
+- Time spent: Estimated 20 minutes.
+- Outcome: Verified customer, provider, and admin marketplace views in the browser using temporary local accounts, then removed the temporary users.
+- Business value added: Confirms the role-focused cleanup works from the user-facing browser view, not only from code checks.
+- Next recommended step: Run one full browser transaction flow: customer posts, provider profile is approved, provider applies, customer accepts, messages, completion, payment, and review.
+
+### 2026-07-12 Continued 7
+
+- Session focus: Full browser transaction flow and provider-card polish.
+- Time spent: Estimated 45 minutes.
+- Outcome: Verified the complete browser flow with temporary local accounts: customer posted a Moving task, provider created a profile, admin approved the provider, provider applied, customer accepted, both sides exchanged messages, customer marked payment paid, completed the task, and submitted a review. Also fixed provider task cards so an already-applied task shows Applied, Accepted, or Rejected instead of continuing to show Apply.
+- Business value added: Confirms the core AddisTask marketplace transaction works end to end from the real user screens and removes a provider-side confusion point before pilot testing.
+- Next recommended step: Start the next production-priority pass on pilot readiness: cleaner demo data, fewer old test records on the marketplace page, and mobile/responsive checks for the main workflow.
+
+### 2026-07-13
+
+- Session focus: Clean local marketplace data and check mobile readiness.
+- Time spent: Estimated 45 minutes.
+- Outcome: Removed accumulated workflow-test records, one-off manual test clutter, and duplicate demo tasks from the local database; added cleanup around backend workflow tests so future test runs do not refill the marketplace with temporary records; checked the homepage, login popup, and logged-in customer marketplace at phone-sized widths.
+- Business value added: Makes the local app easier to judge from a real customer point of view and keeps future test runs from making the marketplace look crowded or unprofessional.
+- Next recommended step: Continue production pilot readiness by improving data management/admin controls and doing a visual mobile pass with screenshots for the key customer/provider/admin screens.

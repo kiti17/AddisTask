@@ -17,6 +17,7 @@ export default function Marketplace({
   activeMode,
   currentUserId,
   providerApprovalStatus,
+  providerApplications = [],
 }) {
   const sortedTasks = [...tasks].sort((a, b) => {
     const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -179,6 +180,7 @@ export default function Marketplace({
                 activeMode={activeMode}
                 currentUserId={currentUserId}
                 providerApprovalStatus={providerApprovalStatus}
+                providerApplications={providerApplications}
               />
             ))}
           </div>
@@ -210,6 +212,7 @@ export default function Marketplace({
                 activeMode={activeMode}
                 currentUserId={currentUserId}
                 providerApprovalStatus={providerApprovalStatus}
+                providerApplications={providerApplications}
               />
             ))}
           </div>
@@ -235,6 +238,7 @@ export default function Marketplace({
             activeMode={activeMode}
             currentUserId={currentUserId}
             providerApprovalStatus={providerApprovalStatus}
+            providerApplications={providerApplications}
           />
         ))}
       </div>
@@ -254,6 +258,7 @@ function TaskRow({
   activeMode,
   currentUserId,
   providerApprovalStatus,
+  providerApplications,
 }) {
   const currentStatus = task.status?.toLowerCase().trim();
   const lifecycleSteps = ["open", "assigned", "completed"];
@@ -262,6 +267,10 @@ function TaskRow({
   const isCustomer = activeMode === "customer";
   const isProvider = activeMode === "provider";
   const isApprovedProvider = providerApprovalStatus === "approved";
+  const providerApplication = providerApplications?.find(
+    (application) => Number(application.task_id) === Number(task.id)
+  );
+  const providerApplicationStatus = providerApplication?.status?.toLowerCase().trim();
   const statusLabel = {
     open: "Open for applications",
     assigned: "Provider accepted",
@@ -284,6 +293,7 @@ function TaskRow({
     currentStatus,
     isOwnTask,
     isApprovedProvider,
+    providerApplicationStatus,
   });
 
   return (
@@ -406,15 +416,27 @@ function TaskRow({
               <span className="status-pill pending">Your task</span>
             )}
 
-            {!isOwnTask && currentStatus === "open" && isApprovedProvider && (
+            {!isOwnTask && providerApplicationStatus === "pending" && (
+              <span className="status-pill pending">Applied</span>
+            )}
+
+            {!isOwnTask && providerApplicationStatus === "accepted" && (
+              <span className="status-pill assigned">Accepted</span>
+            )}
+
+            {!isOwnTask && providerApplicationStatus === "rejected" && (
+              <span className="status-pill rejected">Rejected</span>
+            )}
+
+            {!isOwnTask && !providerApplicationStatus && currentStatus === "open" && isApprovedProvider && (
               <button onClick={() => applyToTask(task)}>Apply</button>
             )}
 
-            {!isOwnTask && currentStatus === "open" && !isApprovedProvider && (
+            {!isOwnTask && !providerApplicationStatus && currentStatus === "open" && !isApprovedProvider && (
               <span className="status-pill pending">Approval required</span>
             )}
 
-            {!isOwnTask && currentStatus !== "open" && (
+            {!isOwnTask && !providerApplicationStatus && currentStatus !== "open" && (
               <span className="status-pill rejected">Not open</span>
             )}
           </>
@@ -429,6 +451,7 @@ function getNextStep({
   currentStatus,
   isOwnTask,
   isApprovedProvider,
+  providerApplicationStatus,
 }) {
   if (activeMode === "customer") {
     if (!isOwnTask) return "Switch to Provider Mode if you want to apply.";
@@ -440,6 +463,18 @@ function getNextStep({
   if (activeMode === "provider") {
     if (isOwnTask) return "This is your customer task. Switch to Customer Mode to manage it.";
     if (!isApprovedProvider) return "Get provider approval before applying.";
+    if (providerApplicationStatus === "pending") {
+      return "Your application is waiting for customer review.";
+    }
+    if (providerApplicationStatus === "accepted") {
+      if (currentStatus === "completed") {
+        return "This task is completed. Check payment status and customer review.";
+      }
+      return "Customer accepted you for this task. Coordinate details and complete the work.";
+    }
+    if (providerApplicationStatus === "rejected") {
+      return "Customer chose another provider for this task.";
+    }
     if (currentStatus === "open") return "Apply if the task matches your service.";
     if (currentStatus === "assigned") return "This task already has an accepted provider.";
     if (currentStatus === "completed") return "This task is already completed.";

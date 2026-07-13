@@ -1,13 +1,149 @@
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db.database import SessionLocal
 from app.main import app
+from app.models.application import Application
+from app.models.message import TaskMessage
+from app.models.provider import ProviderProfile
+from app.models.review import Review
+from app.models.task import Task
 from app.models.user import User
 
 
 client = TestClient(app)
+
+TEST_USER_NAMES = {
+    "Identity Test User",
+    "Normal Approval User",
+    "Pending Provider User",
+    "Customer Approval Flow",
+    "Provider Approval Flow",
+    "Admin Approval Flow",
+    "Provider Resubmit Flow",
+    "Admin Resubmit Flow",
+    "Customer Accept Flow",
+    "Provider Accept Flow",
+    "Admin Accept Flow",
+    "Customer Payment Flow",
+    "Provider Payment Flow",
+    "Admin Payment Flow",
+    "Customer Invalid Payment",
+    "Customer Complete Owner",
+    "Other Complete User",
+    "Provider Complete Flow",
+    "Admin Complete Flow",
+    "Customer Message Pending",
+    "Provider Message Pending",
+    "Message Outsider",
+    "Admin Message Pending",
+    "Customer Assigned Flow",
+    "Provider Assigned Flow",
+    "Admin Assigned Flow",
+    "Self Apply User",
+    "Self Apply Admin",
+}
+
+TEST_TASK_TITLES = {"Test apartment cleaning"}
+TEST_PROVIDER_NAMES = {
+    "Workflow Test Cleaning",
+    "Workflow Test Cleaning Updated",
+}
+
+
+def cleanup_workflow_test_data():
+    db = SessionLocal()
+
+    try:
+        user_ids = [
+            user_id
+            for (user_id,) in db.query(User.id)
+            .filter(User.full_name.in_(TEST_USER_NAMES))
+            .all()
+        ]
+        task_ids = [
+            task_id
+            for (task_id,) in db.query(Task.id)
+            .filter(
+                (Task.title.in_(TEST_TASK_TITLES))
+                | (Task.customer_id.in_(user_ids))
+            )
+            .all()
+        ]
+        provider_ids = [
+            provider_id
+            for (provider_id,) in db.query(ProviderProfile.id)
+            .filter(
+                (ProviderProfile.business_name.in_(TEST_PROVIDER_NAMES))
+                | (ProviderProfile.user_id.in_(user_ids))
+            )
+            .all()
+        ]
+
+        if task_ids:
+            db.query(TaskMessage).filter(TaskMessage.task_id.in_(task_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(Review).filter(Review.task_id.in_(task_ids)).delete(
+                synchronize_session=False
+            )
+
+        if provider_ids:
+            db.query(Review).filter(Review.provider_id.in_(provider_ids)).delete(
+                synchronize_session=False
+            )
+
+        if user_ids:
+            db.query(TaskMessage).filter(
+                (TaskMessage.sender_id.in_(user_ids))
+                | (TaskMessage.recipient_id.in_(user_ids))
+            ).delete(synchronize_session=False)
+            db.query(Review).filter(Review.customer_id.in_(user_ids)).delete(
+                synchronize_session=False
+            )
+
+        if task_ids or provider_ids:
+            query = db.query(Application)
+
+            if task_ids and provider_ids:
+                query = query.filter(
+                    (Application.task_id.in_(task_ids))
+                    | (Application.provider_id.in_(provider_ids))
+                )
+            elif task_ids:
+                query = query.filter(Application.task_id.in_(task_ids))
+            else:
+                query = query.filter(Application.provider_id.in_(provider_ids))
+
+            query.delete(synchronize_session=False)
+
+        if provider_ids:
+            db.query(ProviderProfile).filter(ProviderProfile.id.in_(provider_ids)).delete(
+                synchronize_session=False
+            )
+
+        if task_ids:
+            db.query(Task).filter(Task.id.in_(task_ids)).delete(
+                synchronize_session=False
+            )
+
+        if user_ids:
+            db.query(User).filter(User.id.in_(user_ids)).delete(
+                synchronize_session=False
+            )
+
+        db.commit()
+    finally:
+        db.close()
+
+
+@pytest.fixture(autouse=True)
+def isolate_workflow_test_data():
+    cleanup_workflow_test_data()
+    yield
+    cleanup_workflow_test_data()
 
 
 def unique_phone(prefix: str) -> str:

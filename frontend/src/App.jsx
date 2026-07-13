@@ -3,7 +3,13 @@ import "./App.css";
 import { api } from "./services/api";
 import Hero from "./components/Hero";
 import Marketplace from "./components/Marketplace";
+import CustomerDashboard from "./components/CustomerDashboard";
+import ProviderDashboard from "./components/ProviderDashboard";
 import MatchedProviders from "./components/MatchedProviders";
+import MessagePanel from "./components/MessagePanel";
+import ReviewPanel from "./components/ReviewPanel";
+import ProviderProfilePanel from "./components/ProviderProfilePanel";
+import ProviderDirectoryPanel from "./components/ProviderDirectoryPanel";
 import serviceCleaning from "./assets/service-cleaning.jpg";
 import servicePlumbing from "./assets/service-plumbing.jpg";
 import serviceElectrical from "./assets/service-electrical.jpg";
@@ -1340,6 +1346,29 @@ export default function App() {
   const customerReviewTasks = completedTasks.filter(
     (task) => task.customer_id === currentUserId
   );
+  const providerServiceAreas = [
+    myProviderProfile?.city,
+    ...(myProviderProfile?.service_area || "")
+      .split(",")
+      .map((area) => area.trim())
+  ]
+    .filter(Boolean)
+    .map((area) => area.toLowerCase());
+  const providerMatchingOpenTasks = myProviderProfile
+    ? tasks.filter((task) => {
+        const taskCategory = task.category?.toLowerCase() || "";
+        const taskLocation = task.location?.toLowerCase() || "";
+        const profileCategory = myProviderProfile.skill_category?.toLowerCase() || "";
+        const serviceMatches = taskCategory === profileCategory;
+        const locationMatches =
+          providerServiceAreas.length === 0 ||
+          providerServiceAreas.some((area) => taskLocation.includes(area) || area.includes(taskLocation));
+
+        return task.status === "open" && serviceMatches && locationMatches;
+      })
+    : [];
+  const providerActionableOpenTasks =
+    myProviderApprovalStatus === "approved" ? providerMatchingOpenTasks : [];
   const customerNotifications = [
     {
       id: "customer-applications",
@@ -2530,134 +2559,43 @@ export default function App() {
             activeMode={activeMode}
             currentUserId={currentUserId}
             providerApprovalStatus={myProviderApprovalStatus}
+            providerApplications={providerApplications}
           />
 
           {activeMode === "customer" && (
-            <section className="card wide customer-next-steps-card">
-              <div className="section-header">
-                <div>
-                  <h2>Customer Next Steps</h2>
-                  <p className="muted">
-                    Focus on the work that needs your attention first.
-                  </p>
-                </div>
-              </div>
-
-              <div className="next-step-grid">
-                <div>
-                  <span>{pendingCustomerApplications.length}</span>
-                  <strong>Review applications</strong>
-                  <p>Accept the best provider for your posted tasks.</p>
-                </div>
-                <div>
-                  <span>{myAssignedTasks.length}</span>
-                  <strong>Coordinate assigned work</strong>
-                  <p>Use messages and complete the task after the work is done.</p>
-                </div>
-                <div>
-                  <span>{customerPaymentSummary.unpaid + customerPaymentSummary.cash_agreed}</span>
-                  <strong>Track payment</strong>
-                  <p>Update unpaid or cash-agreed jobs as the work progresses.</p>
-                </div>
-                <div>
-                  <span>{customerReviewTasks.length}</span>
-                  <strong>Leave reviews</strong>
-                  <p>Review completed jobs to build provider trust.</p>
-                </div>
-              </div>
-            </section>
+            <CustomerDashboard
+              pendingCustomerApplications={pendingCustomerApplications}
+              myAssignedTasks={myAssignedTasks}
+              customerPaymentSummary={customerPaymentSummary}
+              customerReviewTasks={customerReviewTasks}
+              myOpenTasks={myOpenTasks}
+              myCompletedTasks={myCompletedTasks}
+              applicationsTask={applicationsTask}
+              applications={applications}
+              applicationsError={applicationsError}
+              openProviderProfile={openProviderProfile}
+              updateApplicationStatus={updateApplicationStatus}
+            />
           )}
 
-          {activeMode === "customer" && (
-            <section className="card wide payment-summary-card">
-              <div className="section-header">
-                <div>
-                  <h2>Payment Summary</h2>
-                  <p className="muted">
-                    A quick view of payment progress for your posted tasks.
-                  </p>
-                </div>
-              </div>
-
-              <div className="activity-summary payment-summary-grid">
-                <div>
-                  <span>Unpaid</span>
-                  <strong>{customerPaymentSummary.unpaid}</strong>
-                </div>
-                <div>
-                  <span>Cash agreed</span>
-                  <strong>{customerPaymentSummary.cash_agreed}</strong>
-                </div>
-                <div>
-                  <span>Paid</span>
-                  <strong>{customerPaymentSummary.paid}</strong>
-                </div>
-                <div>
-                  <span>Disputed</span>
-                  <strong>{customerPaymentSummary.disputed}</strong>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {activeMode === "customer" && (
-            <section className="card wide task-history-card">
-              <div className="section-header">
-                <div>
-                  <h2>My Task History</h2>
-                  <p className="muted">
-                    Follow your posted work from new request to assigned job and completion.
-                  </p>
-                </div>
-              </div>
-
-              <div className="task-history-grid">
-                <div>
-                  <h3>Open</h3>
-                  {myOpenTasks.length === 0 ? (
-                    <p className="muted">No open posted tasks.</p>
-                  ) : (
-                    myOpenTasks.slice(0, 4).map((task) => (
-                      <article className="mini-task-card" key={task.id}>
-                        <strong>{task.title}</strong>
-                        <span>{task.category} | {task.budget || 0} birr</span>
-                        <small>{task.location || "Addis Ababa"}</small>
-                      </article>
-                    ))
-                  )}
-                </div>
-
-                <div>
-                  <h3>Assigned</h3>
-                  {myAssignedTasks.length === 0 ? (
-                    <p className="muted">No assigned tasks right now.</p>
-                  ) : (
-                    myAssignedTasks.slice(0, 4).map((task) => (
-                      <article className="mini-task-card" key={task.id}>
-                        <strong>{task.title}</strong>
-                        <span>{task.category} | {task.budget || 0} birr</span>
-                        <small>Payment: {(task.payment_status || "unpaid").replace("_", " ")}</small>
-                      </article>
-                    ))
-                  )}
-                </div>
-
-                <div>
-                  <h3>Completed</h3>
-                  {myCompletedTasks.length === 0 ? (
-                    <p className="muted">No completed tasks yet.</p>
-                  ) : (
-                    myCompletedTasks.slice(0, 4).map((task) => (
-                      <article className="mini-task-card" key={task.id}>
-                        <strong>{task.title}</strong>
-                        <span>{task.category} | {task.budget || 0} birr</span>
-                        <small>Payment: {(task.payment_status || "unpaid").replace("_", " ")}</small>
-                      </article>
-                    ))
-                  )}
-                </div>
-              </div>
-            </section>
+          {activeMode === "provider" && (
+            <ProviderDashboard
+              myProviderApprovalStatus={myProviderApprovalStatus}
+              providerActionableOpenTasks={providerActionableOpenTasks}
+              pendingProviderApplications={pendingProviderApplications}
+              acceptedProviderApplications={acceptedProviderApplications}
+              rejectedProviderApplications={rejectedProviderApplications}
+              myProviderProfile={myProviderProfile}
+              approvedProviders={approvedProviders}
+              pendingProviders={pendingProviders}
+              loadMyProviderProfile={loadMyProviderProfile}
+              openProviderProfileForm={() => setView("provider")}
+              loadProviderProfileIntoForm={loadProviderProfileIntoForm}
+              loadProviderApplications={loadProviderApplications}
+              providerActivityLoadedAt={providerActivityLoadedAt}
+              providerApplications={providerApplications}
+              getProviderApplicationNotice={getProviderApplicationNotice}
+            />
           )}
 
           <MatchedProviders
@@ -2667,588 +2605,61 @@ export default function App() {
           />
 
           {selectedProviderProfile && (
-            <section className="card wide provider-profile-panel">
-              <div className="section-header">
-                <div>
-                  <span className="eyebrow">Provider profile</span>
-                  <h2>{selectedProviderProfile.business_name}</h2>
-                  <p className="muted">
-                    {selectedProviderProfile.skill_category} | {selectedProviderProfile.city}
-                  </p>
-                </div>
-
-                <button
-                  className="secondary-btn inline"
-                  onClick={() => {
-                    setSelectedProviderProfile(null);
-                    setSelectedProviderReviews([]);
-                  }}
-                >
-                  Close Profile
-                </button>
-              </div>
-
-              {selectedProviderProfile.bio && (
-                <p className="provider-profile-bio">{selectedProviderProfile.bio}</p>
-              )}
-
-              <div className="provider-profile-grid">
-                <div>
-                  <span>Rating</span>
-                  <strong>{selectedProviderProfile.rating || 4.5}</strong>
-                </div>
-                <div>
-                  <span>Completed jobs</span>
-                  <strong>{selectedProviderProfile.completed_tasks || 0}</strong>
-                </div>
-                <div>
-                  <span>Experience</span>
-                  <strong>{selectedProviderProfile.experience_years || 0} years</strong>
-                </div>
-                <div>
-                  <span>Response time</span>
-                  <strong>{selectedProviderProfile.response_time_minutes || 30} min</strong>
-                </div>
-                <div>
-                  <span>Service areas</span>
-                  <strong>{selectedProviderProfile.service_area || selectedProviderProfile.city || "Not provided"}</strong>
-                </div>
-                <div>
-                  <span>Availability</span>
-                  <strong>{selectedProviderProfile.availability || "Not provided"}</strong>
-                </div>
-                <div>
-                  <span>ID status</span>
-                  <strong>{selectedProviderProfile.id_verification_status || "not_submitted"}</strong>
-                </div>
-                <div>
-                  <span>Approval</span>
-                  <strong>{selectedProviderProfile.approval_status || "pending"}</strong>
-                </div>
-              </div>
-
-              <div className="profile-actions">
-                <button onClick={() => saveProvider(selectedProviderProfile)}>
-                  Save Provider
-                </button>
-                {selectedProviderProfile.contact_phone && (
-                  <span>Contact phone: {selectedProviderProfile.contact_phone}</span>
-                )}
-              </div>
-
-              <div className="provider-reviews">
-                <div className="section-header compact">
-                  <div>
-                    <h3>Customer reviews</h3>
-                    <p className="muted">
-                      Reviews from completed AddisTask jobs help customers compare providers.
-                    </p>
-                  </div>
-                </div>
-
-                {selectedProviderReviews.length === 0 && (
-                  <div className="empty-state">
-                    No customer reviews yet.
-                  </div>
-                )}
-
-                {selectedProviderReviews.map((review) => (
-                  <div className="review-card" key={review.id}>
-                    <div>
-                      <strong>{review.rating}/5</strong>
-                      {review.created_at && (
-                        <span>
-                          {new Date(review.created_at).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                    <p>{review.comment || "No written comment."}</p>
-                    {review.status_note && (
-                      <small>{review.status_note}</small>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
+            <ProviderProfilePanel
+              provider={selectedProviderProfile}
+              reviews={selectedProviderReviews}
+              onClose={() => {
+                setSelectedProviderProfile(null);
+                setSelectedProviderReviews([]);
+              }}
+              saveProvider={saveProvider}
+            />
           )}
 
           {activeMode === "customer" && (
-          <section className="card wide customer-review-card">
-            <div className="section-header">
-              <div>
-                <h2>Customer Application Review</h2>
-                <p className="muted">
-                  After a provider applies, the customer who posted the task can
-                  accept or reject the application here.
-                </p>
-              </div>
-            </div>
-
-            {applicationsTask && (
-              <div className="review-context">
-                <span>Reviewing task</span>
-                <strong>{applicationsTask.title}</strong>
-                <p>
-                  {applications.length
-                    ? `${applications.length} provider application${
-                        applications.length === 1 ? "" : "s"
-                      } loaded`
-                    : "No provider applications loaded yet"}
-                </p>
-              </div>
-            )}
-
-            {applicationsError && (
-              <div className="empty-state attention-state">
-                {applicationsError}
-              </div>
-            )}
-
-            <div className="list">
-              {applications.length === 0 && !applicationsError && (
-                <div className="empty-state">
-                  Click Applications on a task while logged in as the customer who
-                  posted it. If a provider already applied, the request will appear
-                  here with Accept and Reject buttons.
-                </div>
-              )}
-
-              {applications.map((a) => (
-                <div className="row" key={a.application_id}>
-                  <div>
-                    <strong>{a.business_name}</strong>
-                    <p>
-                      {a.skill_category} | {a.city} | Status: {a.status}
-                    </p>
-                    <div className="trust-list compact">
-                      <span>Rating: {a.rating || 4.5}</span>
-                      <span>Completed: {a.completed_tasks || 0}</span>
-                      <span>Response: {a.response_time_minutes || 30} min</span>
-                    </div>
-                  </div>
-
-                  <div className="actions">
-                    {a.status === "pending" && (
-                      <>
-                        <button
-                          className="secondary-btn inline"
-                          onClick={() => openProviderProfile(a)}
-                        >
-                          View Profile
-                        </button>
-                        <button
-                          onClick={() =>
-                            updateApplicationStatus(a.application_id, "accepted")
-                          }
-                        >
-                          Accept
-                        </button>
-                        <button
-                          className="secondary-btn inline"
-                          onClick={() =>
-                            updateApplicationStatus(a.application_id, "rejected")
-                          }
-                        >
-                          Reject
-                        </button>
-                      </>
-                    )}
-
-                    {a.status !== "pending" && (
-                      <>
-                        <button
-                          className="secondary-btn inline"
-                          onClick={() => openProviderProfile(a)}
-                        >
-                          View Profile
-                        </button>
-                        <span className={`status-pill ${a.status}`}>{a.status}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-          )}
-
-          {activeMode === "provider" && (
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Provider Verification</h2>
-                <p className="muted">
-                  Providers must be approved before they can apply to customer tasks.
-                </p>
-              </div>
-
-              <button onClick={loadMyProviderProfile}>Check My Status</button>
-            </div>
-
-            <div className="activity-summary">
-              <div>
-                <span>My profile</span>
-                <strong>{myProviderProfile ? myProviderProfile.business_name : "Not loaded"}</strong>
-              </div>
-              <div>
-                <span>Approval status</span>
-                <strong>{myProviderApprovalStatus}</strong>
-              </div>
-              <div>
-                <span>Approved supply</span>
-                <strong>{approvedProviders.length}</strong>
-              </div>
-              <div>
-                <span>Pending review</span>
-                <strong>{pendingProviders.length}</strong>
-              </div>
-            </div>
-
-            {myProviderProfile?.approval_status === "pending" && (
-              <div className="empty-state attention-state">
-                Your provider profile is waiting for platform approval. After approval,
-                the Apply button will be available for open tasks.
-              </div>
-            )}
-
-            {myProviderProfile?.approval_status === "rejected" && (
-              <div className="empty-state attention-state">
-                Your provider profile needs changes before approval.
-                {myProviderProfile.admin_notes && (
-                  <span className="provider-admin-note">
-                    Admin note: {myProviderProfile.admin_notes}
-                  </span>
-                )}
-                <button className="secondary-btn inline" onClick={loadProviderProfileIntoForm}>
-                  Edit and Resubmit
-                </button>
-              </div>
-            )}
-          </section>
+            <ProviderDirectoryPanel
+              searchCategory={searchCategory}
+              searchLocation={searchLocation}
+              loadProviders={loadProviders}
+              clearProviderFilters={() => {
+                setSearchCategory("");
+                setSearchLocation("");
+              }}
+              filteredProviders={filteredProviders}
+              savedProviders={savedProviders}
+              openProviderProfile={openProviderProfile}
+              saveProvider={saveProvider}
+              removeSavedProvider={removeSavedProvider}
+            />
           )}
 
           {(activeMode === "customer" || activeMode === "provider") && (
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Provider Directory</h2>
-                <p className="muted">
-                  {searchCategory || searchLocation
-                    ? `Showing providers related to ${searchCategory || "all services"} in ${searchLocation || "all areas"}.`
-                    : "Browse trusted local providers by service, rating, completed jobs, and response time."}
-                </p>
-              </div>
-
-              <div className="toolbar-actions">
-                <button onClick={loadProviders}>Load Providers</button>
-                {(searchCategory || searchLocation) && (
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => {
-                      setSearchCategory("");
-                      setSearchLocation("");
-                    }}
-                  >
-                    Show All Providers
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="provider-grid">
-              {filteredProviders.length === 0 && (
-                <div className="empty-state">
-                  No providers match the selected service and area yet.
-                </div>
-              )}
-
-              {filteredProviders.map((provider) => (
-                <div className="provider-card" key={provider.id}>
-                  <div>
-                    <strong>{provider.business_name}</strong>
-                    <p>{provider.skill_category} | {provider.city}</p>
-                  </div>
-
-                  <div className="trust-list compact">
-                    <span>Rating: {provider.rating || 4.5}</span>
-                    <span>Completed: {provider.completed_tasks || 0}</span>
-                    <span>Response: {provider.response_time_minutes || 30} min</span>
-                    <span>Experience: {provider.experience_years || 0} yrs</span>
-                  </div>
-
-                  {provider.bio && (
-                    <p className="provider-bio">{provider.bio}</p>
-                  )}
-
-                  <div className="trust-list compact">
-                    {provider.service_area && <span>Areas: {provider.service_area}</span>}
-                    {provider.availability && <span>Available: {provider.availability}</span>}
-                    <span>ID: {provider.id_verification_status || "not_submitted"}</span>
-                  </div>
-
-                  <span className={`verification-pill ${provider.approval_status || "pending"}`}>
-                    {provider.approval_status || "pending"}
-                  </span>
-
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => openProviderProfile(provider)}
-                  >
-                    View Profile
-                  </button>
-
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => saveProvider(provider)}
-                  >
-                    Save Provider
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-          )}
-
-          {(activeMode === "customer" || activeMode === "provider") && (
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Saved Providers</h2>
-                <p className="muted">
-                  Shortlist providers while comparing services, ratings, and response
-                  times.
-                </p>
-              </div>
-            </div>
-
-            <div className="provider-grid">
-              {savedProviders.length === 0 && (
-                <div className="empty-state">
-                  Save providers from the directory to compare them here.
-                </div>
-              )}
-
-              {savedProviders.map((provider) => (
-                <div className="provider-card saved-provider" key={provider.id}>
-                  <div>
-                    <strong>{provider.business_name}</strong>
-                    <p>{provider.skill_category} | {provider.city}</p>
-                  </div>
-
-                  <div className="trust-list compact">
-                    <span>Rating: {provider.rating || 4.5}</span>
-                    <span>Completed: {provider.completed_tasks || 0}</span>
-                    <span>Response: {provider.response_time_minutes || 30} min</span>
-                    <span>Experience: {provider.experience_years || 0} yrs</span>
-                    <span>Status: {provider.approval_status || "pending"}</span>
-                  </div>
-
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => openProviderProfile(provider)}
-                  >
-                    View Profile
-                  </button>
-
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => removeSavedProvider(provider.id)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-          )}
-
-          {activeMode === "provider" && (
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Provider Activity</h2>
-                <p className="muted">
-                  Providers can check whether their task applications are pending,
-                  accepted, or rejected.
-                </p>
-              </div>
-
-              <button onClick={loadProviderApplications}>Load My Activity</button>
-            </div>
-
-            <div className="activity-summary">
-              <div>
-                <span>Accepted</span>
-                <strong>{acceptedProviderApplications.length}</strong>
-              </div>
-              <div>
-                <span>Pending</span>
-                <strong>{pendingProviderApplications.length}</strong>
-              </div>
-              <div>
-                <span>Rejected</span>
-                <strong>{rejectedProviderApplications.length}</strong>
-              </div>
-              <div>
-                <span>Last checked</span>
-                <strong>{providerActivityLoadedAt || "Not yet"}</strong>
-              </div>
-            </div>
-
-            <div className="list">
-              {providerApplications.length === 0 && (
-                <div className="empty-state">
-                  Apply to a task, then load provider activity to see status updates.
-                </div>
-              )}
-
-              {providerApplications.map((application) => (
-                <div className="row" key={application.application_id}>
-                  <div>
-                    <strong>{application.task_title || "Task application"}</strong>
-                    <p>
-                      {application.task_category || "Service"} |{" "}
-                      {application.task_location || "Addis Ababa"} |{" "}
-                      {application.task_budget || 0} birr
-                    </p>
-                    <div className="trust-list compact">
-                      <span>Task: {application.task_status || "open"}</span>
-                      <span>
-                        Payment: {(application.task_payment_status || "unpaid").replace("_", " ")}
-                      </span>
-                      <span>Application ID: {application.application_id}</span>
-                    </div>
-                    <p className="application-notice">
-                      {getProviderApplicationNotice(application.status)}
-                    </p>
-                  </div>
-
-                  <span className={`status-pill ${application.status}`}>
-                    {application.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-          )}
-
-          {(activeMode === "customer" || activeMode === "provider") && (
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Messages</h2>
-                <p className="muted">
-                  Once a provider is accepted, the customer and provider can coordinate
-                  timing, access, and job details.
-                </p>
-              </div>
-            </div>
-
-            {messageEligibleTasks.length === 0 ? (
-              <div className="empty-state">
-                Assigned tasks will appear here after a customer accepts a provider.
-              </div>
-            ) : (
-              <div className="message-panel">
-                <div className="message-controls">
-                  <select
-                    value={messageTaskId}
-                    onChange={(e) => {
-                      setMessageTaskId(e.target.value);
-                      setTaskMessages([]);
-                    }}
-                  >
-                    <option value="">Select assigned task</option>
-                    {messageEligibleTasks.map((task) => (
-                      <option key={task.id} value={task.id}>
-                        {task.title}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button onClick={() => loadMessages()}>Load Messages</button>
-                </div>
-
-                <div className="message-list">
-                  {taskMessages.length === 0 && (
-                    <div className="empty-state">
-                      No messages loaded for this task yet.
-                    </div>
-                  )}
-
-                  {taskMessages.map((message) => (
-                    <div className="message-bubble" key={message.id}>
-                      <span>
-                        Sender #{message.sender_id} to #{message.recipient_id}
-                      </span>
-                      <p>{message.body}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <textarea
-                  placeholder="Write timing, access, materials, or arrival details."
-                  value={messageBody}
-                  onChange={(e) => setMessageBody(e.target.value)}
-                />
-
-                <button onClick={sendMessage}>Send Message</button>
-              </div>
-            )}
-          </section>
+            <MessagePanel
+              messageEligibleTasks={messageEligibleTasks}
+              messageTaskId={messageTaskId}
+              onSelectTask={(taskId) => {
+                setMessageTaskId(taskId);
+                setTaskMessages([]);
+              }}
+              loadMessages={loadMessages}
+              taskMessages={taskMessages}
+              messageBody={messageBody}
+              setMessageBody={setMessageBody}
+              sendMessage={sendMessage}
+            />
           )}
 
           {activeMode === "customer" && (
-          <section className="card wide">
-            <div className="section-header">
-              <div>
-                <h2>Reviews</h2>
-                <p className="muted">
-                  After completion, customers can rate the provider and strengthen
-                  the trust score used in future matching.
-                </p>
-              </div>
-            </div>
-
-            {customerReviewTasks.length === 0 ? (
-              <div className="empty-state">
-                Completed tasks will appear here for customer review.
-              </div>
-            ) : (
-              <div className="review-grid">
-                <select
-                  value={reviewTaskId}
-                  onChange={(e) => setReviewTaskId(e.target.value)}
-                >
-                  <option value="">Select completed task</option>
-                  {customerReviewTasks.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={reviewRating}
-                  onChange={(e) => setReviewRating(e.target.value)}
-                >
-                  <option value="5">5 - Excellent</option>
-                  <option value="4">4 - Good</option>
-                  <option value="3">3 - Fair</option>
-                  <option value="2">2 - Poor</option>
-                  <option value="1">1 - Not acceptable</option>
-                </select>
-
-                <textarea
-                  placeholder="What should future customers know about this provider?"
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                />
-
-                <button onClick={submitReview}>Submit Review</button>
-              </div>
-            )}
-          </section>
+            <ReviewPanel
+              customerReviewTasks={customerReviewTasks}
+              reviewTaskId={reviewTaskId}
+              setReviewTaskId={setReviewTaskId}
+              reviewRating={reviewRating}
+              setReviewRating={setReviewRating}
+              reviewComment={reviewComment}
+              setReviewComment={setReviewComment}
+              submitReview={submitReview}
+            />
           )}
         </>
       )}
