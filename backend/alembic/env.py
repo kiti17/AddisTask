@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.db.database import Base
 from app.models.application import Application
+from app.models.admin_audit import AdminAuditLog
 from app.models.message import TaskMessage
 from app.models.provider import ProviderProfile
 from app.models.review import Review

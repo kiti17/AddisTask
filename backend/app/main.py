@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.db.database import Base, engine
 
 from app.models.user import User
+from app.models.admin_audit import AdminAuditLog
 from app.models.task import Task
 from app.models.provider import ProviderProfile
 from app.models.review import Review
@@ -17,6 +18,7 @@ from app.models.application import Application
 from app.api.routes_applications import router as applications_router
 from app.api.routes_reviews import router as reviews_router
 from app.api.routes_messages import router as messages_router
+from app.api.routes_admin import router as admin_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -42,6 +44,7 @@ app.include_router(auth_router)
 app.include_router(applications_router)
 app.include_router(reviews_router)
 app.include_router(messages_router)
+app.include_router(admin_router)
 
 @app.get("/")
 def root():

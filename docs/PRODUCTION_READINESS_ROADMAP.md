@@ -7,6 +7,9 @@ AddisTask has moved from MSSE demo project to startup product. The next goal is 
 ### Strong foundation
 
 - Customer registration and login
+- Logged-in password change
+- Basic failed-login limiting for pilot safety
+- Pilot communication templates
 - Customer and provider mode
 - Task posting and browsing
 - Provider profiles
@@ -28,8 +31,8 @@ AddisTask has moved from MSSE demo project to startup product. The next goal is 
 - The frontend is concentrated in one large `App.jsx`, which makes future changes risky.
 - Database changes need stricter production migration discipline.
 - Production environment guards now reject unsafe secrets and localhost database URLs when `APP_ENV=production`.
-- There is no rate limiting, phone verification, password reset, or account recovery.
-- There is no real external notification channel yet, such as SMS, email, or WhatsApp.
+- There is no production-grade shared rate limiting, phone verification, verified password reset, or automated account recovery.
+- There is no real external notification channel yet, such as SMS, email, or WhatsApp, though pilot communication templates are prepared for manual outreach.
 - Payment is manually tracked, but commission reports, cancellation, refunds, and full dispute operations are not implemented.
 
 ## Phase 1: Production Foundation
@@ -113,13 +116,13 @@ Goal: test business model with low operational risk.
 
 ## Recommended Next Implementation
 
-Start with a repeatable manual pilot checklist and UI cleanup.
+Continue with account safety and pilot onboarding after the launch checklist.
 
-Reason: the core backend marketplace loop is now protected by tests, but the real startup risk is whether customers, providers, and admins can complete the flow without confusion.
+Reason: the admin launch checklist and cleanup controls now help the owner prepare a controlled pilot. The next risk is whether real pilot users can access accounts safely, recover from login problems, and understand what to do before test day.
 
 First implementation scope:
 
-- Use `docs/MANUAL_TESTING_CHECKLIST.md` after each group of changes.
-- Reduce crowded customer/provider sections.
-- Keep the most important next action visible for each role.
-- Add frontend checks around task history, payment summary, and provider activity.
+- Plan password reset and account recovery.
+- Prepare first real admin setup instructions.
+- Write simple customer and provider onboarding instructions.
+- Keep using `docs/MANUAL_TESTING_CHECKLIST.md`, `docs/PILOT_TEST_SCRIPT.md`, and `docs/PILOT_LAUNCH_CHECKLIST.md` after each group of changes.

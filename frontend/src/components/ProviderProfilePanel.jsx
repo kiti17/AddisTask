@@ -1,3 +1,5 @@
+import ProviderTrustSummary from "./ProviderTrustSummary";
+
 export default function ProviderProfilePanel({
   provider,
   reviews,
@@ -25,6 +27,8 @@ export default function ProviderProfilePanel({
       {provider.bio && (
         <p className="provider-profile-bio">{provider.bio}</p>
       )}
+
+      <ProviderTrustSummary provider={provider} />
 
       <div className="provider-profile-grid">
         <div>

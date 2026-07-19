@@ -1,3 +1,5 @@
+import ProviderTrustSummary from "./ProviderTrustSummary";
+
 export default function ProviderDashboard({
   myProviderApprovalStatus,
   providerActionableOpenTasks,
@@ -77,6 +79,10 @@ export default function ProviderDashboard({
             <strong>{myProviderProfile ? myProviderProfile.business_name : "Not loaded"}</strong>
           </div>
           <div>
+            <span>Trust readiness</span>
+            <strong>{myProviderProfile ? `${myProviderProfile.trust_score ?? 0}%` : "Not loaded"}</strong>
+          </div>
+          <div>
             <span>Approval status</span>
             <strong>{myProviderApprovalStatus}</strong>
           </div>
@@ -89,6 +95,10 @@ export default function ProviderDashboard({
             <strong>{pendingProviders.length}</strong>
           </div>
         </div>
+
+        {myProviderProfile && (
+          <ProviderTrustSummary provider={myProviderProfile} />
+        )}
 
         {!myProviderProfile && (
           <div className="empty-state attention-state">

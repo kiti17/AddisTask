@@ -1,3 +1,6 @@
+import { useState } from "react";
+import TaskAreaMap from "./TaskAreaMap";
+
 export default function Marketplace({
   loadTasks,
   searchCategory,
@@ -14,11 +17,19 @@ export default function Marketplace({
   loadApplications,
   completeTask,
   updateTaskPaymentStatus,
+  customerApplications = [],
+  customerReviewTasks = [],
+  openMessagesModal,
+  openReviewModal,
   activeMode,
   currentUserId,
   providerApprovalStatus,
   providerApplications = [],
+  archiveTask,
 }) {
+  const [managedTask, setManagedTask] = useState(null);
+  const [showOtherTaskHistory, setShowOtherTaskHistory] = useState(false);
+  const [showUnavailableTasks, setShowUnavailableTasks] = useState(false);
   const sortedTasks = [...tasks].sort((a, b) => {
     const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
     const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -26,12 +37,23 @@ export default function Marketplace({
     if (dateA !== dateB) return dateB - dateA;
     return (b.id || 0) - (a.id || 0);
   });
+  const filteredTasks = sortedTasks.filter((task) =>
+    taskMatchesFilters(task, searchCategory, searchLocation, maxBudget)
+  );
   const myPostedTasks = sortedTasks.filter(
     (task) => currentUserId && task.customer_id === currentUserId
   );
-  const otherTasks = sortedTasks.filter(
+  const otherTasks = filteredTasks.filter(
     (task) => !currentUserId || task.customer_id !== currentUserId
   );
+  const otherOpenTasks = otherTasks.filter((task) => isOpenTask(task));
+  const otherUnavailableTasks = otherTasks.filter((task) => !isOpenTask(task));
+  const visibleOtherTasks = showOtherTaskHistory ? otherTasks : otherOpenTasks;
+  const showOpenOnlyByDefault = activeMode !== "admin";
+  const defaultVisibleTasks = showOpenOnlyByDefault && !showUnavailableTasks
+    ? filteredTasks.filter((task) => isOpenTask(task))
+    : filteredTasks;
+  const hiddenUnavailableTasks = filteredTasks.filter((task) => !isOpenTask(task));
   const shouldSplitCustomerTasks = activeMode === "customer" && currentUserId;
   const workflowSteps = [
     "Posted",
@@ -172,15 +194,13 @@ export default function Marketplace({
                 key={t.id}
                 task={t}
                 details={getTaskDetails(t.description)}
-                loadMatches={loadMatches}
                 applyToTask={applyToTask}
-                loadApplications={loadApplications}
-                completeTask={completeTask}
-                updateTaskPaymentStatus={updateTaskPaymentStatus}
+                openTaskManager={setManagedTask}
                 activeMode={activeMode}
                 currentUserId={currentUserId}
                 providerApprovalStatus={providerApprovalStatus}
                 providerApplications={providerApplications}
+                archiveTask={archiveTask}
               />
             ))}
           </div>
@@ -188,77 +208,148 @@ export default function Marketplace({
           <div className="task-list-heading secondary">
             <div>
               <h3>Other Customer Tasks</h3>
-              <p>These are tasks posted by other customers.</p>
+              <p>Open tasks from other customers appear first.</p>
             </div>
+
+            {otherUnavailableTasks.length > 0 && (
+              <button
+                className="secondary-btn inline"
+                onClick={() => setShowOtherTaskHistory((current) => !current)}
+              >
+                {showOtherTaskHistory
+                  ? "Hide Closed Tasks"
+                  : `Show Closed Tasks (${otherUnavailableTasks.length})`}
+              </button>
+            )}
           </div>
 
           <div className="list">
-            {otherTasks.length === 0 && (
+            {visibleOtherTasks.length === 0 && (
               <div className="empty-state">
-                No other customer tasks are posted yet.
+                No open other-customer tasks match this view.
               </div>
             )}
 
-            {otherTasks.map((t) => (
+            {visibleOtherTasks.map((t) => (
               <TaskRow
                 key={t.id}
                 task={t}
                 details={getTaskDetails(t.description)}
-                loadMatches={loadMatches}
                 applyToTask={applyToTask}
-                loadApplications={loadApplications}
-                completeTask={completeTask}
-                updateTaskPaymentStatus={updateTaskPaymentStatus}
+                openTaskManager={setManagedTask}
                 activeMode={activeMode}
                 currentUserId={currentUserId}
                 providerApprovalStatus={providerApprovalStatus}
                 providerApplications={providerApplications}
+                archiveTask={archiveTask}
               />
             ))}
           </div>
         </>
       ) : (
-      <div className="list">
-        {sortedTasks.length === 0 && (
-          <div className="empty-state">
-            No tasks have been posted yet.
+      <>
+        {showOpenOnlyByDefault && hiddenUnavailableTasks.length > 0 && (
+          <div className="task-list-heading compact-heading">
+            <div>
+              <h3>Open Tasks</h3>
+              <p>Assigned and completed tasks are kept in history.</p>
+            </div>
+
+            <button
+              className="secondary-btn inline"
+              onClick={() => setShowUnavailableTasks((current) => !current)}
+            >
+              {showUnavailableTasks
+                ? "Hide Unavailable Tasks"
+                : `Show Unavailable Tasks (${hiddenUnavailableTasks.length})`}
+            </button>
           </div>
         )}
 
-        {sortedTasks.map((t) => (
-          <TaskRow
-            key={t.id}
-            task={t}
-            details={getTaskDetails(t.description)}
-            loadMatches={loadMatches}
-            applyToTask={applyToTask}
-            loadApplications={loadApplications}
-            completeTask={completeTask}
-            updateTaskPaymentStatus={updateTaskPaymentStatus}
-            activeMode={activeMode}
-            currentUserId={currentUserId}
-            providerApprovalStatus={providerApprovalStatus}
-            providerApplications={providerApplications}
-          />
-        ))}
-      </div>
+        <div className="list">
+          {defaultVisibleTasks.length === 0 && (
+            <div className="empty-state">
+              No open tasks match this view.
+            </div>
+          )}
+
+          {defaultVisibleTasks.map((t) => (
+            <TaskRow
+              key={t.id}
+              task={t}
+              details={getTaskDetails(t.description)}
+              applyToTask={applyToTask}
+              openTaskManager={setManagedTask}
+              activeMode={activeMode}
+              currentUserId={currentUserId}
+              providerApprovalStatus={providerApprovalStatus}
+              providerApplications={providerApplications}
+              archiveTask={archiveTask}
+            />
+          ))}
+        </div>
+      </>
+      )}
+
+      {managedTask && (
+        <TaskManagementModal
+          task={managedTask}
+          details={getTaskDetails(managedTask.description || "")}
+          applications={customerApplications.filter(
+            (application) => Number(application.task_id) === Number(managedTask.id)
+          )}
+          canReview={customerReviewTasks.some(
+            (task) => Number(task.id) === Number(managedTask.id)
+          )}
+          loadMatches={loadMatches}
+          loadApplications={loadApplications}
+          completeTask={completeTask}
+          updateTaskPaymentStatus={updateTaskPaymentStatus}
+          openMessagesModal={openMessagesModal}
+          openReviewModal={openReviewModal}
+          onClose={() => setManagedTask(null)}
+        />
       )}
     </section>
   );
 }
 
+function taskMatchesFilters(task, searchCategory, searchLocation, maxBudget) {
+  const search = normalize(searchCategory);
+  const area = normalize(searchLocation);
+  const budgetLimit = Number(maxBudget || 0);
+  const taskBudget = Number(task.budget || 0);
+  const serviceText = [
+    task.category,
+    task.title,
+    task.description,
+  ].map(normalize).join(" ");
+  const locationText = normalize(task.location);
+  const matchesService = !search || serviceText.includes(search);
+  const matchesArea = !area || locationText.includes(area);
+  const matchesBudget = !budgetLimit || (taskBudget > 0 && taskBudget <= budgetLimit);
+
+  return matchesService && matchesArea && matchesBudget;
+}
+
+function isOpenTask(task) {
+  return normalize(task.status) === "open";
+}
+
+function normalize(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
 function TaskRow({
   task,
   details,
-  loadMatches,
   applyToTask,
-  loadApplications,
-  completeTask,
-  updateTaskPaymentStatus,
+  openTaskManager,
   activeMode,
   currentUserId,
   providerApprovalStatus,
   providerApplications,
+  archiveTask,
 }) {
   const currentStatus = task.status?.toLowerCase().trim();
   const lifecycleSteps = ["open", "assigned", "completed"];
@@ -266,6 +357,7 @@ function TaskRow({
   const isOwnTask = Boolean(currentUserId && task.customer_id === currentUserId);
   const isCustomer = activeMode === "customer";
   const isProvider = activeMode === "provider";
+  const isAdmin = activeMode === "admin";
   const isApprovedProvider = providerApprovalStatus === "approved";
   const providerApplication = providerApplications?.find(
     (application) => Number(application.task_id) === Number(task.id)
@@ -287,7 +379,9 @@ function TaskRow({
     ? "Your task"
     : isProvider
       ? "Available task"
-      : "Other customer task";
+      : isAdmin
+        ? "Marketplace task"
+        : "Other customer task";
   const nextStep = getNextStep({
     activeMode,
     currentStatus,
@@ -318,6 +412,8 @@ function TaskRow({
         <p className="task-meta-line">
           {task.location}
         </p>
+
+        <TaskAreaMap location={task.location} compact />
 
         {details.summary && (
           <p className="task-description">{details.summary}</p>
@@ -376,33 +472,7 @@ function TaskRow({
         {isCustomer && isOwnTask && (
           <>
             <span className="action-help">Customer actions</span>
-            <button onClick={() => loadMatches(task.id)}>Smart Match</button>
-
-            <button onClick={() => loadApplications(task)}>Applications</button>
-
-            {task.status?.toLowerCase().trim() === "assigned" && (
-              <button onClick={() => completeTask(task.id)}>Complete</button>
-            )}
-
-            <span className="action-help">Payment</span>
-            <button
-              className="secondary-btn inline"
-              onClick={() => updateTaskPaymentStatus(task.id, "cash_agreed")}
-            >
-              Cash Agreed
-            </button>
-            <button
-              className="secondary-btn inline"
-              onClick={() => updateTaskPaymentStatus(task.id, "paid")}
-            >
-              Mark Paid
-            </button>
-            <button
-              className="secondary-btn inline"
-              onClick={() => updateTaskPaymentStatus(task.id, "disputed")}
-            >
-              Disputed
-            </button>
+            <button onClick={() => openTaskManager(task)}>Manage Task</button>
           </>
         )}
 
@@ -441,7 +511,237 @@ function TaskRow({
             )}
           </>
         )}
+
+        {isAdmin && archiveTask && (
+          <>
+            <span className="action-help">Admin actions</span>
+            <button
+              className="secondary-btn inline danger-btn"
+              onClick={() => archiveTask(task)}
+            >
+              Archive
+            </button>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+function TaskManagementModal({
+  task,
+  details,
+  applications,
+  canReview,
+  loadMatches,
+  loadApplications,
+  completeTask,
+  updateTaskPaymentStatus,
+  openMessagesModal,
+  openReviewModal,
+  onClose,
+}) {
+  const currentStatus = task.status?.toLowerCase().trim();
+  const paymentStatus = task.payment_status || "unpaid";
+  const pendingApplications = applications.filter(
+    (application) => application.status === "pending"
+  );
+  const acceptedApplication = applications.find(
+    (application) => application.status === "accepted"
+  );
+  const paymentLabel = {
+    unpaid: "Unpaid",
+    cash_agreed: "Cash agreed",
+    paid: "Paid",
+    disputed: "Disputed",
+  }[paymentStatus] || "Unpaid";
+
+  const closeThen = (action) => {
+    onClose();
+    action();
+  };
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onClick={onClose}
+    >
+      <section
+        className="modal-panel task-manager-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-manager-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          className="modal-close"
+          onClick={onClose}
+          aria-label="Close task management window"
+        >
+          Close
+        </button>
+
+        <div className="section-header task-manager-header">
+          <div>
+            <span className="eyebrow">Customer task</span>
+            <h2 id="task-manager-title">Manage Task</h2>
+            <p className="muted">{task.title}</p>
+          </div>
+        </div>
+
+        <div className="task-manager-status-grid">
+          <div>
+            <span>Status</span>
+            <strong>{currentStatus || "open"}</strong>
+          </div>
+          <div>
+            <span>Payment</span>
+            <strong>{paymentLabel}</strong>
+          </div>
+          <div>
+            <span>Applications</span>
+            <strong>{applications.length}</strong>
+          </div>
+          <div>
+            <span>Budget</span>
+            <strong>{task.budget ? `${task.budget} birr` : "Open"}</strong>
+          </div>
+        </div>
+
+        {(details.summary || details.urgency || details.preferredDate) && (
+          <div className="task-manager-summary">
+            {details.summary && <p>{details.summary}</p>}
+            <div className="detail-pills">
+              {details.urgency && (
+                <span className="budget-pill neutral-pill">Urgency: {details.urgency}</span>
+              )}
+              {details.preferredDate && (
+                <span className="budget-pill neutral-pill">
+                  Date: {details.preferredDate}
+                </span>
+              )}
+              {details.timeWindow && (
+                <span className="budget-pill neutral-pill">
+                  Time: {details.timeWindow}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        <TaskAreaMap location={task.location} />
+
+        <div className="task-manager-block">
+          <div className="task-manager-subheader">
+            <div>
+              <strong>Provider applications</strong>
+              <p>
+                {pendingApplications.length
+                  ? `${pendingApplications.length} waiting for your decision.`
+                  : acceptedApplication
+                    ? `${acceptedApplication.business_name} is accepted.`
+                    : "No pending applications right now."}
+              </p>
+            </div>
+
+            <button
+              className="secondary-btn inline"
+              onClick={() => closeThen(() => loadApplications(task))}
+            >
+              Review Applications
+            </button>
+          </div>
+
+          <div className="task-manager-application-list">
+            {applications.length === 0 && (
+              <div className="empty-state compact-empty">
+                Provider applications will appear here after providers apply.
+              </div>
+            )}
+
+            {applications.slice(0, 3).map((application) => (
+              <div className="task-manager-application" key={application.application_id}>
+                <div>
+                  <strong>{application.business_name || "Provider"}</strong>
+                  <span>
+                    {application.skill_category || "Service"} | {application.city || "Addis Ababa"}
+                  </span>
+                </div>
+                <span className={`status-pill ${application.status}`}>
+                  {application.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="task-manager-block">
+          <div className="task-manager-subheader">
+            <div>
+              <strong>Next actions</strong>
+              <p>Open the action you need without leaving this task context.</p>
+            </div>
+          </div>
+
+          <div className="task-manager-action-grid">
+            <button
+              className="secondary-btn inline"
+              onClick={() => closeThen(() => loadMatches(task.id))}
+            >
+              Smart Match
+            </button>
+
+            {currentStatus === "assigned" && (
+              <button onClick={() => closeThen(() => openMessagesModal?.(task.id))}>
+                Messages
+              </button>
+            )}
+
+            {currentStatus === "assigned" && (
+              <button onClick={() => closeThen(() => completeTask(task.id))}>
+                Complete Task
+              </button>
+            )}
+
+            {canReview && (
+              <button onClick={() => closeThen(() => openReviewModal?.(task.id))}>
+                Leave Review
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="task-manager-block">
+          <div className="task-manager-subheader">
+            <div>
+              <strong>Payment status</strong>
+              <p>Track payment manually until online payments are added.</p>
+            </div>
+          </div>
+
+          <div className="task-manager-payment-grid">
+            <button
+              className="secondary-btn inline"
+              onClick={() => closeThen(() => updateTaskPaymentStatus(task.id, "cash_agreed"))}
+            >
+              Cash Agreed
+            </button>
+            <button
+              className="secondary-btn inline"
+              onClick={() => closeThen(() => updateTaskPaymentStatus(task.id, "paid"))}
+            >
+              Mark Paid
+            </button>
+            <button
+              className="secondary-btn inline danger-btn"
+              onClick={() => closeThen(() => updateTaskPaymentStatus(task.id, "disputed"))}
+            >
+              Disputed
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

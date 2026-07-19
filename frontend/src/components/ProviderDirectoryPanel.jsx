@@ -1,15 +1,30 @@
+import ProviderTrustSummary from "./ProviderTrustSummary";
+
 function ProviderCard({
   provider,
   openProviderProfile,
   saveProvider,
   removeSavedProvider,
+  searchCategory,
+  searchLocation,
+  isTopPick = false,
   isSaved = false,
 }) {
+  const comparison = getProviderComparison(provider, searchCategory, searchLocation);
+
   return (
     <div className={`provider-card${isSaved ? " saved-provider" : ""}`} key={provider.id}>
-      <div>
-        <strong>{provider.business_name}</strong>
-        <p>{provider.skill_category} | {provider.city}</p>
+      <div className="provider-card-header">
+        <div>
+          <strong>{provider.business_name}</strong>
+          <p>{provider.skill_category} | {provider.city}</p>
+        </div>
+
+        {!isSaved && (
+          <span className={`provider-fit-pill${isTopPick ? " top" : ""}`}>
+            {isTopPick ? "Best fit" : `${comparison.score}% fit`}
+          </span>
+        )}
       </div>
 
       <div className="trust-list compact">
@@ -20,6 +35,8 @@ function ProviderCard({
         {isSaved && <span>Status: {provider.approval_status || "pending"}</span>}
       </div>
 
+      <ProviderTrustSummary provider={provider} compact />
+
       {!isSaved && provider.bio && (
         <p className="provider-bio">{provider.bio}</p>
       )}
@@ -29,6 +46,14 @@ function ProviderCard({
           {provider.service_area && <span>Areas: {provider.service_area}</span>}
           {provider.availability && <span>Available: {provider.availability}</span>}
           <span>ID: {provider.id_verification_status || "not_submitted"}</span>
+        </div>
+      )}
+
+      {!isSaved && comparison.reasons.length > 0 && (
+        <div className="fit-reason-list">
+          {comparison.reasons.map((reason) => (
+            <span key={reason}>{reason}</span>
+          ))}
         </div>
       )}
 
@@ -67,6 +92,8 @@ function ProviderCard({
 export default function ProviderDirectoryPanel({
   searchCategory,
   searchLocation,
+  totalProviderCount = 0,
+  customerVisibleProviderCount = 0,
   loadProviders,
   clearProviderFilters,
   filteredProviders,
@@ -101,6 +128,14 @@ export default function ProviderDirectoryPanel({
           </div>
         </div>
 
+        <div className="provider-directory-summary">
+          <span>{filteredProviders.length} shown</span>
+          <span>{customerVisibleProviderCount} customer-visible</span>
+          {totalProviderCount > customerVisibleProviderCount && (
+            <span>{totalProviderCount - customerVisibleProviderCount} hidden for trust review</span>
+          )}
+        </div>
+
         <div className="provider-grid">
           {filteredProviders.length === 0 && (
             <div className="empty-state">
@@ -108,12 +143,15 @@ export default function ProviderDirectoryPanel({
             </div>
           )}
 
-          {filteredProviders.map((provider) => (
+          {filteredProviders.map((provider, index) => (
             <ProviderCard
               key={provider.id}
               provider={provider}
               openProviderProfile={openProviderProfile}
               saveProvider={saveProvider}
+              searchCategory={searchCategory}
+              searchLocation={searchLocation}
+              isTopPick={Boolean(searchCategory || searchLocation) && index === 0}
             />
           ))}
         </div>
@@ -138,6 +176,8 @@ export default function ProviderDirectoryPanel({
                 provider={provider}
                 openProviderProfile={openProviderProfile}
                 removeSavedProvider={removeSavedProvider}
+                searchCategory={searchCategory}
+                searchLocation={searchLocation}
                 isSaved
               />
             ))}
@@ -146,4 +186,56 @@ export default function ProviderDirectoryPanel({
       )}
     </>
   );
+}
+
+function getProviderComparison(provider, searchCategory, searchLocation) {
+  const service = normalize(provider.skill_category);
+  const city = normalize(provider.city);
+  const serviceArea = normalize(provider.service_area);
+  const search = normalize(searchCategory);
+  const area = normalize(searchLocation);
+  const reasons = [];
+  let score = 35;
+
+  if (provider.approval_status === "approved") {
+    score += 15;
+    reasons.push("Approved");
+  }
+
+  if (search && service === search) {
+    score += 25;
+    reasons.push("Matches service");
+  } else if (search && service.includes(search)) {
+    score += 14;
+    reasons.push("Related service");
+  }
+
+  if (area && (city.includes(area) || serviceArea.includes(area))) {
+    score += 18;
+    reasons.push("Serves selected area");
+  }
+
+  if (Number(provider.rating || 0) >= 4.5) {
+    score += 8;
+    reasons.push("Strong rating");
+  }
+
+  if (Number(provider.completed_tasks || 0) > 0) {
+    score += 7;
+    reasons.push("Has completed jobs");
+  }
+
+  if (Number(provider.response_time_minutes || 0) <= 30) {
+    score += 7;
+    reasons.push("Fast response");
+  }
+
+  return {
+    score: Math.min(100, score),
+    reasons: reasons.slice(0, 4),
+  };
+}
+
+function normalize(value) {
+  return String(value || "").toLowerCase().trim();
 }

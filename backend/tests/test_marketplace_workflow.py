@@ -2,9 +2,12 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import or_
 
+from app.api.routes_auth import reset_auth_rate_limits
 from app.db.database import SessionLocal
 from app.main import app
+from app.models.admin_audit import AdminAuditLog
 from app.models.application import Application
 from app.models.message import TaskMessage
 from app.models.provider import ProviderProfile
@@ -17,6 +20,9 @@ client = TestClient(app)
 
 TEST_USER_NAMES = {
     "Identity Test User",
+    "Password Change User",
+    "Password Change Blocked User",
+    "Login Rate Limit User",
     "Normal Approval User",
     "Pending Provider User",
     "Customer Approval Flow",
@@ -44,12 +50,21 @@ TEST_USER_NAMES = {
     "Admin Assigned Flow",
     "Self Apply User",
     "Self Apply Admin",
+    "Customer Archive Flow",
+    "Admin Archive Flow",
+    "Incomplete Trust Provider",
+    "Trust Approval Admin",
+    "Match Visibility Customer",
+    "Legacy Incomplete Match Provider",
+    "Ready Match Provider",
 }
 
 TEST_TASK_TITLES = {"Test apartment cleaning"}
 TEST_PROVIDER_NAMES = {
     "Workflow Test Cleaning",
     "Workflow Test Cleaning Updated",
+    "Workflow Test Incomplete Approved",
+    "Workflow Test Ready Match",
 }
 
 
@@ -81,6 +96,28 @@ def cleanup_workflow_test_data():
             )
             .all()
         ]
+
+        audit_filters = []
+
+        if task_ids:
+            audit_filters.append(
+                (AdminAuditLog.entity_type == "task")
+                & (AdminAuditLog.entity_id.in_(task_ids))
+            )
+
+        if provider_ids:
+            audit_filters.append(
+                (AdminAuditLog.entity_type == "provider")
+                & (AdminAuditLog.entity_id.in_(provider_ids))
+            )
+
+        if user_ids:
+            audit_filters.append(AdminAuditLog.admin_id.in_(user_ids))
+
+        if audit_filters:
+            db.query(AdminAuditLog).filter(or_(*audit_filters)).delete(
+                synchronize_session=False
+            )
 
         if task_ids:
             db.query(TaskMessage).filter(TaskMessage.task_id.in_(task_ids)).delete(
@@ -142,7 +179,9 @@ def cleanup_workflow_test_data():
 @pytest.fixture(autouse=True)
 def isolate_workflow_test_data():
     cleanup_workflow_test_data()
+    reset_auth_rate_limits()
     yield
+    reset_auth_rate_limits()
     cleanup_workflow_test_data()
 
 
@@ -236,6 +275,8 @@ def create_provider(provider_token: str):
     assert body["approval_status"] == "pending"
     assert body["experience_years"] == 3
     assert body["id_verification_status"] == "submitted"
+    assert body["trust_ready"] is True
+    assert body["trust_score"] == 100
     return body
 
 
@@ -289,6 +330,96 @@ def test_login_returns_user_identity_and_role():
     assert body["role"] == "customer"
 
 
+def test_logged_in_user_can_change_password():
+    user = register_and_login("Password Change User", "070")
+
+    response = client.patch(
+        "/api/auth/password",
+        headers=auth_headers(user["token"]),
+        json={
+            "current_password": user["password"],
+            "new_password": "newsecret123",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password updated successfully"
+
+    old_login_response = client.post(
+        "/api/auth/login",
+        json={
+            "phone": user["phone"],
+            "password": user["password"],
+        },
+    )
+    assert old_login_response.status_code == 401
+
+    new_login_response = client.post(
+        "/api/auth/login",
+        json={
+            "phone": user["phone"],
+            "password": "newsecret123",
+        },
+    )
+    assert new_login_response.status_code == 200
+
+
+def test_password_change_requires_current_password_and_new_value():
+    user = register_and_login("Password Change Blocked User", "071")
+
+    wrong_current_response = client.patch(
+        "/api/auth/password",
+        headers=auth_headers(user["token"]),
+        json={
+            "current_password": "wrongsecret",
+            "new_password": "newsecret123",
+        },
+    )
+
+    assert wrong_current_response.status_code == 400
+    assert wrong_current_response.json()["detail"] == "Current password is incorrect"
+
+    same_password_response = client.patch(
+        "/api/auth/password",
+        headers=auth_headers(user["token"]),
+        json={
+            "current_password": user["password"],
+            "new_password": user["password"],
+        },
+    )
+
+    assert same_password_response.status_code == 400
+    assert same_password_response.json()["detail"] == "New password must be different"
+
+
+def test_repeated_failed_logins_are_temporarily_limited():
+    user = register_and_login("Login Rate Limit User", "072")
+
+    for _ in range(5):
+        response = client.post(
+            "/api/auth/login",
+            json={
+                "phone": user["phone"],
+                "password": "wrongsecret",
+            },
+        )
+        assert response.status_code == 401
+
+    limited_response = client.post(
+        "/api/auth/login",
+        json={
+            "phone": user["phone"],
+            "password": user["password"],
+        },
+    )
+
+    assert limited_response.status_code == 429
+    assert (
+        limited_response.json()["detail"]
+        == "Too many failed login attempts. Try again later."
+    )
+
+
 def test_provider_approval_requires_admin():
     normal_user = register_and_login("Normal Approval User", "092")
     provider_user = register_and_login("Pending Provider User", "093")
@@ -305,6 +436,124 @@ def test_provider_approval_requires_admin():
         headers=auth_headers(normal_user["token"]),
     )
     assert approval_response.status_code == 403
+
+
+def test_admin_data_health_requires_admin():
+    normal_user = register_and_login("Normal Approval User", "092")
+
+    response = client.get(
+        "/api/admin/data-health",
+        headers=auth_headers(normal_user["token"]),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Admin access required"
+
+
+def test_admin_can_scan_and_clean_workflow_test_data():
+    customer = register_and_login("Customer Payment Flow", "087")
+    provider_user = register_and_login("Provider Payment Flow", "088")
+    admin = register_and_login("Admin Payment Flow", "086")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+    provider = create_provider(provider_user["token"])
+
+    approval_response = client.patch(
+        f"/api/providers/{provider['id']}/approval?status=approved",
+        headers=auth_headers(admin["token"]),
+    )
+    assert approval_response.status_code == 200
+
+    application_response = client.post(
+        "/api/applications/",
+        headers=auth_headers(provider_user["token"]),
+        json={"task_id": task["id"]},
+    )
+    assert application_response.status_code == 200
+
+    health_response = client.get(
+        "/api/admin/data-health",
+        headers=auth_headers(admin["token"]),
+    )
+    assert health_response.status_code == 200
+    candidates = health_response.json()["workflow_test_candidates"]
+    assert candidates["users"] == 3
+    assert candidates["tasks"] == 1
+    assert candidates["providers"] == 1
+    assert candidates["applications"] == 1
+
+    cleanup_response = client.post(
+        "/api/admin/cleanup-workflow-tests",
+        headers=auth_headers(admin["token"]),
+    )
+    assert cleanup_response.status_code == 200
+    deleted = cleanup_response.json()["deleted"]
+    assert deleted["users"] == 3
+    assert deleted["tasks"] == 1
+    assert deleted["providers"] == 1
+    assert deleted["applications"] == 1
+    assert cleanup_response.json()["workflow_test_candidates"]["users"] == 0
+
+
+def test_admin_can_archive_and_restore_task_without_deleting_it():
+    customer = register_and_login("Customer Archive Flow", "083")
+    admin = register_and_login("Admin Archive Flow", "082")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+
+    forbidden_response = client.patch(
+        f"/api/admin/tasks/{task['id']}/archive",
+        headers=auth_headers(customer["token"]),
+        json={"reason": "Customer should not archive marketplace records."},
+    )
+    assert forbidden_response.status_code == 403
+
+    archive_response = client.patch(
+        f"/api/admin/tasks/{task['id']}/archive",
+        headers=auth_headers(admin["token"]),
+        json={"reason": "Duplicate customer request."},
+    )
+    assert archive_response.status_code == 200
+    archived_task = archive_response.json()["task"]
+    assert archived_task["status"] == "archived"
+    assert archived_task["archive_reason"] == "Duplicate customer request."
+    assert archive_response.json()["summary"]["archived_tasks"] >= 1
+
+    marketplace_response = client.get("/api/tasks/")
+    assert marketplace_response.status_code == 200
+    marketplace_task_ids = {task["id"] for task in marketplace_response.json()}
+    assert task["id"] not in marketplace_task_ids
+
+    archived_response = client.get(
+        "/api/admin/tasks/archived",
+        headers=auth_headers(admin["token"]),
+    )
+    assert archived_response.status_code == 200
+    archived_task_ids = {task["id"] for task in archived_response.json()}
+    assert task["id"] in archived_task_ids
+
+    audit_response = client.get(
+        "/api/admin/audit-log?limit=5",
+        headers=auth_headers(admin["token"]),
+    )
+    assert audit_response.status_code == 200
+    assert any(log["action"] == "archive_task" for log in audit_response.json())
+
+    restore_response = client.patch(
+        f"/api/admin/tasks/{task['id']}/restore",
+        headers=auth_headers(admin["token"]),
+    )
+    assert restore_response.status_code == 200
+    assert restore_response.json()["task"]["status"] == "open"
+
+    restored_marketplace_response = client.get("/api/tasks/")
+    assert restored_marketplace_response.status_code == 200
+    restored_marketplace_task_ids = {
+        task["id"] for task in restored_marketplace_response.json()
+    }
+    assert task["id"] in restored_marketplace_task_ids
 
 
 def test_pending_provider_cannot_apply_until_admin_approves():
@@ -342,6 +591,124 @@ def test_pending_provider_cannot_apply_until_admin_approves():
     )
     assert apply_response.status_code == 200
     assert apply_response.json()["status"] == "pending"
+
+
+def test_admin_cannot_approve_provider_missing_trust_details():
+    provider_user = register_and_login("Incomplete Trust Provider", "077")
+    admin = register_and_login("Trust Approval Admin", "076")
+    promote_user_to_admin(admin["user_id"])
+
+    provider_response = client.post(
+        "/api/providers/",
+        headers=auth_headers(provider_user["token"]),
+        json={
+            "business_name": "Incomplete Trust Profile",
+            "skill_category": "Cleaning",
+            "city": "Bole",
+            "bio": "",
+            "experience_years": 0,
+            "service_area": "",
+            "availability": "",
+            "contact_phone": "",
+        },
+    )
+    assert provider_response.status_code == 200
+    provider = provider_response.json()
+    assert provider["trust_ready"] is False
+    assert provider["trust_score"] < 100
+    assert "Contact phone" in provider["missing_trust_requirements"]
+
+    approval_response = client.patch(
+        f"/api/providers/{provider['id']}/approval",
+        headers=auth_headers(admin["token"]),
+        json={
+            "status": "approved",
+            "admin_notes": "Trying to approve before trust details are complete.",
+        },
+    )
+    assert approval_response.status_code == 400
+    assert (
+        approval_response.json()["detail"]
+        == "Provider profile needs trust details before approval"
+    )
+
+
+def test_smart_match_only_returns_approved_trust_ready_providers():
+    customer = register_and_login("Match Visibility Customer", "073")
+    incomplete_provider_user = register_and_login(
+        "Legacy Incomplete Match Provider", "072"
+    )
+    ready_provider_user = register_and_login("Ready Match Provider", "071")
+    admin = register_and_login("Trust Approval Admin", "076")
+    promote_user_to_admin(admin["user_id"])
+
+    task = create_task(customer["token"])
+
+    incomplete_response = client.post(
+        "/api/providers/",
+        headers=auth_headers(incomplete_provider_user["token"]),
+        json={
+            "business_name": "Workflow Test Incomplete Approved",
+            "skill_category": "Cleaning",
+            "city": "Bole",
+            "bio": "",
+            "experience_years": 0,
+            "service_area": "",
+            "availability": "",
+            "contact_phone": "",
+        },
+    )
+    assert incomplete_response.status_code == 200
+    incomplete_provider = incomplete_response.json()
+    assert incomplete_provider["trust_ready"] is False
+
+    db = SessionLocal()
+    try:
+        legacy_provider = db.query(ProviderProfile).filter(
+            ProviderProfile.id == incomplete_provider["id"]
+        ).first()
+        assert legacy_provider is not None
+        legacy_provider.approval_status = "approved"
+        db.commit()
+    finally:
+        db.close()
+
+    ready_provider_response = client.post(
+        "/api/providers/",
+        headers=auth_headers(ready_provider_user["token"]),
+        json={
+            "business_name": "Workflow Test Ready Match",
+            "skill_category": "Cleaning",
+            "city": "Bole",
+            "bio": "Experienced cleaner for apartments and small offices.",
+            "experience_years": 3,
+            "service_area": "Bole, CMC",
+            "availability": "Weekdays and weekends",
+            "contact_phone": "0912345678",
+        },
+    )
+    assert ready_provider_response.status_code == 200
+    ready_provider = ready_provider_response.json()
+    assert ready_provider["trust_ready"] is True
+
+    approval_response = client.patch(
+        f"/api/providers/{ready_provider['id']}/approval",
+        headers=auth_headers(admin["token"]),
+        json={
+            "status": "approved",
+            "admin_notes": "Complete profile ready for matching.",
+        },
+    )
+    assert approval_response.status_code == 200
+
+    match_response = client.get(f"/api/providers/match/{task['id']}")
+    assert match_response.status_code == 200
+    matches = match_response.json()
+    provider_names = {provider["business_name"] for provider in matches}
+
+    assert "Workflow Test Ready Match" in provider_names
+    assert "Workflow Test Incomplete Approved" not in provider_names
+    assert all(provider["trust_ready"] is True for provider in matches)
 
 
 def test_rejected_provider_can_resubmit_profile_for_review():

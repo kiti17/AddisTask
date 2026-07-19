@@ -97,6 +97,7 @@ PostgreSQL Database
 | GET | /api/health | Backend health check |
 | POST | /api/auth/register | Register a user |
 | POST | /api/auth/login | Login and receive JWT token |
+| PATCH | /api/auth/password | Change password for a logged-in user |
 | POST | /api/tasks/ | Create a task |
 | GET | /api/tasks/ | List tasks |
 | PATCH | /api/tasks/{task_id}/complete | Complete an assigned task |
@@ -110,6 +111,8 @@ PostgreSQL Database
 | GET | /api/messages/task/{task_id} | List task messages |
 | POST | /api/reviews/ | Review a completed task provider |
 | GET | /api/reviews/provider/{provider_id} | List provider reviews |
+
+Login includes a small in-memory failed-attempt limit for pilot safety. For production, replace this with a shared rate limiter such as Redis-backed throttling at the API or gateway layer.
 
 ## Running AddisTask Locally
 

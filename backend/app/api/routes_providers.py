@@ -11,7 +11,76 @@ from app.core.security import get_current_admin_user, get_current_user
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
 
+def has_text(value: str | None, minimum_length: int = 1):
+    return bool(value and len(value.strip()) >= minimum_length)
+
+
+def provider_trust_requirements(provider: ProviderProfile):
+    requirements = [
+        {
+            "key": "bio",
+            "label": "Profile bio",
+            "complete": has_text(provider.bio, 20),
+            "detail": "Describe experience, tools, and service quality.",
+        },
+        {
+            "key": "experience_years",
+            "label": "Experience",
+            "complete": (provider.experience_years or 0) > 0,
+            "detail": "Add at least one year of relevant experience.",
+        },
+        {
+            "key": "service_area",
+            "label": "Service areas",
+            "complete": has_text(provider.service_area),
+            "detail": "List the Addis Ababa areas this provider serves.",
+        },
+        {
+            "key": "availability",
+            "label": "Availability",
+            "complete": has_text(provider.availability),
+            "detail": "Tell customers when the provider can work.",
+        },
+        {
+            "key": "contact_phone",
+            "label": "Contact phone",
+            "complete": has_text(provider.contact_phone),
+            "detail": "Provide a phone number admin can verify.",
+        },
+        {
+            "key": "id_verification_status",
+            "label": "ID submitted",
+            "complete": provider.id_verification_status == "submitted",
+            "detail": "Provider must submit basic identity details for review.",
+        },
+    ]
+
+    return requirements
+
+
+def provider_trust_summary(provider: ProviderProfile):
+    requirements = provider_trust_requirements(provider)
+    completed = sum(1 for requirement in requirements if requirement["complete"])
+    total = len(requirements)
+    score = round((completed / total) * 100) if total else 0
+    missing = [
+        requirement["label"]
+        for requirement in requirements
+        if not requirement["complete"]
+    ]
+
+    return {
+        "trust_score": score,
+        "trust_level": "Ready for admin review" if not missing else "Needs trust details",
+        "trust_ready": len(missing) == 0,
+        "trust_requirements": requirements,
+        "missing_trust_requirements": missing,
+    }
+
+
 def provider_to_dict(provider: ProviderProfile):
+    trust_summary = provider_trust_summary(provider)
+
     return {
         "id": provider.id,
         "user_id": provider.user_id,
@@ -28,8 +97,16 @@ def provider_to_dict(provider: ProviderProfile):
         "rating": provider.rating,
         "completed_tasks": provider.completed_tasks,
         "response_time_minutes": provider.response_time_minutes,
-        "approval_status": provider.approval_status
+        "approval_status": provider.approval_status,
+        **trust_summary,
     }
+
+
+def provider_is_customer_visible(provider: ProviderProfile):
+    return (
+        provider.approval_status == "approved"
+        and provider_trust_summary(provider)["trust_ready"]
+    )
 
 
 def calculate_score(provider: ProviderProfile, task: Task | None = None):
@@ -88,7 +165,7 @@ def create_provider(
     db.commit()
     db.refresh(new_provider)
 
-    return new_provider
+    return provider_to_dict(new_provider)
 
 
 @router.get("/me")
@@ -168,6 +245,14 @@ def update_provider_approval_status(
             detail="Status must be pending, approved, or rejected"
         )
 
+    admin_notes = admin_notes.strip() if admin_notes else None
+
+    if approval_status == "rejected" and not admin_notes:
+        raise HTTPException(
+            status_code=400,
+            detail="Admin note is required when rejecting provider profile"
+        )
+
     provider = db.query(ProviderProfile).filter(
         ProviderProfile.id == provider_id
     ).first()
@@ -175,15 +260,24 @@ def update_provider_approval_status(
     if not provider:
         raise HTTPException(status_code=404, detail="Provider profile not found")
 
+    trust_summary = provider_trust_summary(provider)
+
+    if approval_status == "approved" and not trust_summary["trust_ready"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Provider profile needs trust details before approval"
+        )
+
     provider.approval_status = approval_status
-    provider.admin_notes = admin_notes.strip() if admin_notes else None
+    provider.admin_notes = admin_notes
     db.commit()
     db.refresh(provider)
 
     return {
         "id": provider.id,
         "approval_status": provider.approval_status,
-        "admin_notes": provider.admin_notes
+        "admin_notes": provider.admin_notes,
+        **provider_trust_summary(provider),
     }
 
 
@@ -193,8 +287,12 @@ def get_ranked_providers(db: Session = Depends(get_db)):
         ProviderProfile.approval_status == "approved"
     ).all()
 
+    customer_visible_providers = [
+        provider for provider in providers if provider_is_customer_visible(provider)
+    ]
+
     ranked = sorted(
-        providers,
+        customer_visible_providers,
         key=lambda p: calculate_score(p),
         reverse=True
     )
@@ -224,8 +322,12 @@ def match_providers_for_task(
     ProviderProfile.approval_status == "approved"
     ).all()
     
+    customer_visible_providers = [
+        provider for provider in providers if provider_is_customer_visible(provider)
+    ]
+
     ranked = sorted(
-        providers,
+        customer_visible_providers,
         key=lambda p: calculate_score(p, task),
         reverse=True
     )
@@ -245,6 +347,7 @@ def match_providers_for_task(
             "completed_tasks": p.completed_tasks,
             "response_time_minutes": p.response_time_minutes,
             "approval_status": p.approval_status,
+            **provider_trust_summary(p),
             "match_score": calculate_score(p, task),
             "category_match": p.skill_category.lower() == task.category.lower(),
             "city_match": p.city.lower() == task.location.lower()

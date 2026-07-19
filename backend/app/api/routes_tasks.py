@@ -41,7 +41,7 @@ def create_task(
 
 @router.get("/")
 def get_tasks(db: Session = Depends(get_db)):
-    return db.query(Task).all()
+    return db.query(Task).filter(Task.status != "archived").all()
 
 
 @router.patch("/{task_id}/complete")

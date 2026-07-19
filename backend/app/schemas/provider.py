@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProviderCreate(BaseModel):
@@ -30,6 +30,11 @@ class ProviderResponse(BaseModel):
     id_verification_status: str = "not_submitted"
     admin_notes: str | None = None
     approval_status: str = "pending"
+    trust_score: int = 0
+    trust_level: str = "Needs trust details"
+    trust_ready: bool = False
+    trust_requirements: list[dict] = Field(default_factory=list)
+    missing_trust_requirements: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

@@ -13,6 +13,7 @@ export default function Hero({
   notificationCount,
   setSearchCategory,
   openAccountModal,
+  showHero = true,
 }) {
   const [heroSearch, setHeroSearch] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -83,7 +84,9 @@ export default function Hero({
               >
                 Alerts {notificationCount ? `(${notificationCount})` : ""}
               </button>
-              <span className="topbar-user">{currentUser || "User"}</span>
+              <button className="topbar-user" onClick={openAccountModal}>
+                {currentUser || "User"}
+              </button>
               {currentUserRole === "admin" && (
                 <button
                   className="nav-link"
@@ -117,96 +120,98 @@ export default function Hero({
         </div>
       </nav>
 
-      <header className="hero">
-        <div className="hero-copy">
-          <h1>Get help with tasks in Addis Ababa.</h1>
-          <p>
-            Search for cleaning, repairs, moving, delivery, and other local services.
-          </p>
+      {showHero && (
+        <header className="hero">
+          <div className="hero-copy">
+            <h1>Get help with tasks in Addis Ababa.</h1>
+            <p>
+              Search for cleaning, repairs, moving, delivery, and other local services.
+            </p>
 
-          <div className="hero-search-wrap">
-            <form
-              className="hero-search"
-              onSubmit={searchServices}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
-            >
-              <input
-                value={heroSearch}
-                onChange={(event) => {
-                  setHeroSearch(event.target.value);
-                  setShowSuggestions(true);
-                }}
-                onClick={() => setShowSuggestions(true)}
-                placeholder="What do you need help with?"
-                aria-label="Search services"
-                aria-expanded={showSuggestions}
-                aria-controls="hero-service-suggestions"
-              />
-              <button type="submit" aria-label="Search services">
-                Search
-              </button>
-            </form>
-
-            {showSuggestions && (
-              <div className="hero-suggestions" id="hero-service-suggestions">
-                {serviceSuggestions.map((service) => (
-                  <button
-                    key={service}
-                    type="button"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      chooseSuggestion(service);
-                    }}
-                  >
-                    {service}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="hero-service-chips" aria-label="Available services">
-            {serviceSuggestions.map((service) => (
-              <button
-                key={service}
-                type="button"
-                onClick={() => chooseSuggestion(service)}
+            <div className="hero-search-wrap">
+              <form
+                className="hero-search"
+                onSubmit={searchServices}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
               >
-                {service}
+                <input
+                  value={heroSearch}
+                  onChange={(event) => {
+                    setHeroSearch(event.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onClick={() => setShowSuggestions(true)}
+                  placeholder="What do you need help with?"
+                  aria-label="Search services"
+                  aria-expanded={showSuggestions}
+                  aria-controls="hero-service-suggestions"
+                />
+                <button type="submit" aria-label="Search services">
+                  Search
+                </button>
+              </form>
+
+              {showSuggestions && (
+                <div className="hero-suggestions" id="hero-service-suggestions">
+                  {serviceSuggestions.map((service) => (
+                    <button
+                      key={service}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        chooseSuggestion(service);
+                      }}
+                    >
+                      {service}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hero-service-chips" aria-label="Available services">
+              {serviceSuggestions.map((service) => (
+                <button
+                  key={service}
+                  type="button"
+                  onClick={() => chooseSuggestion(service)}
+                >
+                  {service}
+                </button>
+              ))}
+            </div>
+
+            <div className="hero-actions">
+              <button
+                className="primary-action"
+                onClick={() => {
+                  setActiveMode("customer");
+                  setView("customer");
+                }}
+              >
+                Post a Task
               </button>
-            ))}
+              <button
+                className="secondary-btn hero-secondary"
+                onClick={() => {
+                  setActiveMode("provider");
+                  setView("provider");
+                }}
+              >
+                Become a Provider
+              </button>
+            </div>
           </div>
 
-          <div className="hero-actions">
-            <button
-              className="primary-action"
-              onClick={() => {
-                setActiveMode("customer");
-                setView("customer");
-              }}
-            >
-              Post a Task
-            </button>
-            <button
-              className="secondary-btn hero-secondary"
-              onClick={() => {
-                setActiveMode("provider");
-                setView("provider");
-              }}
-            >
-              Become a Provider
-            </button>
+          <div className="hero-image-panel">
+            <img
+              src={heroImage}
+              alt="A local service provider arriving to help a customer at home"
+            />
           </div>
-        </div>
-
-        <div className="hero-image-panel">
-          <img
-            src={heroImage}
-            alt="A local service provider arriving to help a customer at home"
-          />
-        </div>
-      </header>
+        </header>
+      )}
     </>
   );
 }

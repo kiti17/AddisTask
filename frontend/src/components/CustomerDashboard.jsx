@@ -8,9 +8,14 @@ export default function CustomerDashboard({
   applicationsTask,
   applications,
   applicationsError,
+  applicationsLoading,
+  isApplicationsModalOpen,
+  closeApplicationsModal,
   openProviderProfile,
   updateApplicationStatus,
 }) {
+  const handleCloseApplications = closeApplicationsModal || (() => {});
+
   return (
     <>
       <section className="card wide customer-next-steps-card">
@@ -135,103 +140,136 @@ export default function CustomerDashboard({
         </div>
       </section>
 
-      <section className="card wide customer-review-card">
-        <div className="section-header">
-          <div>
-            <h2>Customer Application Review</h2>
-            <p className="muted">
-              After a provider applies, the customer who posted the task can
-              accept or reject the application here.
-            </p>
-          </div>
-        </div>
+      {isApplicationsModalOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={handleCloseApplications}
+        >
+          <section
+            className="modal-panel application-review-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="application-review-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={handleCloseApplications}
+              aria-label="Close application review window"
+            >
+              Close
+            </button>
 
-        {applicationsTask && (
-          <div className="review-context">
-            <span>Reviewing task</span>
-            <strong>{applicationsTask.title}</strong>
-            <p>
-              {applications.length
-                ? `${applications.length} provider application${
-                    applications.length === 1 ? "" : "s"
-                  } loaded`
-                : "No provider applications loaded yet"}
-            </p>
-          </div>
-        )}
-
-        {applicationsError && (
-          <div className="empty-state attention-state">
-            {applicationsError}
-          </div>
-        )}
-
-        <div className="list">
-          {applications.length === 0 && !applicationsError && (
-            <div className="empty-state">
-              Click Applications on a task while logged in as the customer who
-              posted it. If a provider already applied, the request will appear
-              here with Accept and Reject buttons.
-            </div>
-          )}
-
-          {applications.map((application) => (
-            <div className="row" key={application.application_id}>
+            <div className="section-header application-review-header">
               <div>
-                <strong>{application.business_name}</strong>
-                <p>
-                  {application.skill_category} | {application.city} | Status: {application.status}
+                <span className="eyebrow">Applications</span>
+                <h2 id="application-review-title">Review Provider Applications</h2>
+                <p className="muted">
+                  See who applied and accept or reject the provider without
+                  leaving your task list.
                 </p>
-                <div className="trust-list compact">
-                  <span>Rating: {application.rating || 4.5}</span>
-                  <span>Completed: {application.completed_tasks || 0}</span>
-                  <span>Response: {application.response_time_minutes || 30} min</span>
-                </div>
-              </div>
-
-              <div className="actions">
-                {application.status === "pending" && (
-                  <>
-                    <button
-                      className="secondary-btn inline"
-                      onClick={() => openProviderProfile(application)}
-                    >
-                      View Profile
-                    </button>
-                    <button
-                      onClick={() =>
-                        updateApplicationStatus(application.application_id, "accepted")
-                      }
-                    >
-                      Accept
-                    </button>
-                    <button
-                      className="secondary-btn inline"
-                      onClick={() =>
-                        updateApplicationStatus(application.application_id, "rejected")
-                      }
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-
-                {application.status !== "pending" && (
-                  <>
-                    <button
-                      className="secondary-btn inline"
-                      onClick={() => openProviderProfile(application)}
-                    >
-                      View Profile
-                    </button>
-                    <span className={`status-pill ${application.status}`}>{application.status}</span>
-                  </>
-                )}
               </div>
             </div>
-          ))}
+
+            {applicationsTask && (
+              <div className="review-context">
+                <span>Reviewing task</span>
+                <strong>{applicationsTask.title}</strong>
+                <p>
+                  {applicationsLoading
+                    ? "Loading provider applications..."
+                    : applications.length
+                      ? `${applications.length} provider application${
+                          applications.length === 1 ? "" : "s"
+                        } loaded`
+                      : "No provider applications loaded yet"}
+                </p>
+              </div>
+            )}
+
+            {applicationsLoading && (
+              <div className="empty-state">
+                Loading applications...
+              </div>
+            )}
+
+            {applicationsError && (
+              <div className="empty-state attention-state">
+                {applicationsError}
+              </div>
+            )}
+
+            <div className="list application-review-list">
+              {!applicationsLoading && applications.length === 0 && !applicationsError && (
+                <div className="empty-state">
+                  No provider has applied to this task yet. When a provider
+                  applies, you will see Accept and Reject buttons here.
+                </div>
+              )}
+
+              {applications.map((application) => (
+                <div
+                  className="row application-review-row"
+                  key={application.application_id}
+                >
+                  <div>
+                    <strong>{application.business_name}</strong>
+                    <p>
+                      {application.skill_category} | {application.city} | Status: {application.status}
+                    </p>
+                    <div className="trust-list compact">
+                      <span>Rating: {application.rating || 4.5}</span>
+                      <span>Completed: {application.completed_tasks || 0}</span>
+                      <span>Response: {application.response_time_minutes || 30} min</span>
+                    </div>
+                  </div>
+
+                  <div className="actions application-review-actions">
+                    {application.status === "pending" && (
+                      <>
+                        <button
+                          className="secondary-btn inline"
+                          onClick={() => openProviderProfile(application)}
+                        >
+                          View Profile
+                        </button>
+                        <button
+                          onClick={() =>
+                            updateApplicationStatus(application.application_id, "accepted")
+                          }
+                        >
+                          Accept
+                        </button>
+                        <button
+                          className="secondary-btn inline"
+                          onClick={() =>
+                            updateApplicationStatus(application.application_id, "rejected")
+                          }
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+
+                    {application.status !== "pending" && (
+                      <>
+                        <button
+                          className="secondary-btn inline"
+                          onClick={() => openProviderProfile(application)}
+                        >
+                          View Profile
+                        </button>
+                        <span className={`status-pill ${application.status}`}>{application.status}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-      </section>
+      )}
     </>
   );
 }

@@ -2,6 +2,8 @@
 
 Use this checklist after a group of changes, not after every small edit. The goal is to test AddisTask like a real customer, provider, and admin.
 
+For a live pilot session with real users, use `docs/PILOT_TEST_SCRIPT.md`.
+
 ## Before Testing
 
 - Start the backend.
@@ -14,13 +16,18 @@ Use this checklist after a group of changes, not after every small edit. The goa
 
 - Register a new customer.
 - Confirm registration logs the customer in.
+- Open Account and update the password.
 - Log out.
-- Log back in with the same phone and password.
+- Confirm the old password no longer logs in.
+- Log back in with the same phone and new password.
+- Try several wrong passwords and confirm the temporary wait message appears.
 - Confirm the customer dashboard shows customer-focused information.
 
 Pass if:
 
 - Login/register works without confusing errors.
+- Password update works only when the current password is correct.
+- Repeated failed logins are temporarily limited.
 - Customer mode is active after normal customer login.
 
 ## 2. Customer Posts A Task
@@ -155,6 +162,20 @@ Pass if:
 
 - The app blocks the action.
 - The message explains the reason in plain language.
+
+## 12. Admin Pilot Run Check
+
+- Log in as admin.
+- Open Marketplace Operations.
+- Review First Admin Checklist, Launch Checklist, Manual Pilot Messages, and Pilot Run.
+- Run Scan Data after the customer/provider test.
+- Confirm Pilot Run reflects task, provider, application, acceptance, messages, completion, and review activity.
+
+Pass if:
+
+- The admin can understand what happened during the pilot run.
+- Missing pilot steps are easy to identify.
+- The owner knows which follow-up message or fix is needed next.
 
 ## Final Pilot Readiness Signal
 

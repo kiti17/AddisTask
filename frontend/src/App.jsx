@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { api } from "./services/api";
 import Hero from "./components/Hero";
@@ -10,6 +10,7 @@ import MessagePanel from "./components/MessagePanel";
 import ReviewPanel from "./components/ReviewPanel";
 import ProviderProfilePanel from "./components/ProviderProfilePanel";
 import ProviderDirectoryPanel from "./components/ProviderDirectoryPanel";
+import ProviderTrustSummary from "./components/ProviderTrustSummary";
 import serviceCleaning from "./assets/service-cleaning.jpg";
 import servicePlumbing from "./assets/service-plumbing.jpg";
 import serviceElectrical from "./assets/service-electrical.jpg";
@@ -62,6 +63,32 @@ const featuredServiceCards = [
 ];
 
 const PLATFORM_FEE_RATE = 0.1;
+
+const normalize = (value) => String(value || "").toLowerCase().trim();
+
+function getProviderDirectoryScore(provider, searchCategory, searchLocation) {
+  const service = normalize(provider.skill_category);
+  const city = normalize(provider.city);
+  const serviceArea = normalize(provider.service_area);
+  const search = normalize(searchCategory);
+  const area = normalize(searchLocation);
+  let score = 0;
+
+  if (provider.approval_status === "approved") score += 30;
+  if (search && service === search) score += 30;
+  if (search && service.includes(search)) score += 15;
+  if (area && (city.includes(area) || serviceArea.includes(area))) score += 20;
+  score += Number(provider.trust_score || 0) * 0.15;
+  score += Number(provider.rating || 0) * 3;
+  score += Math.min(Number(provider.completed_tasks || 0), 40) * 0.4;
+  score -= Math.min(Number(provider.response_time_minutes || 0), 120) * 0.05;
+
+  return score;
+}
+
+function isProviderCustomerVisible(provider) {
+  return provider.approval_status === "approved" && provider.trust_ready === true;
+}
 
 const addisAreas = [
   "Addis Ababa",
@@ -224,6 +251,7 @@ const demoProviders = [
 ];
 
 export default function App() {
+  const activeViewRef = useRef(null);
   const [view, setView] = useState("home");
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [homeFocus, setHomeFocus] = useState("customer");
@@ -231,6 +259,8 @@ export default function App() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   const [token, setToken] = useState(sessionStorage.getItem("token") || "");
   const [currentUser, setCurrentUser] = useState(
@@ -271,9 +301,12 @@ export default function App() {
 
   const [selectedTask, setSelectedTask] = useState(null);
   const [matches, setMatches] = useState([]);
+  const [isMatchesModalOpen, setIsMatchesModalOpen] = useState(false);
   const [applications, setApplications] = useState([]);
   const [applicationsTask, setApplicationsTask] = useState(null);
   const [applicationsError, setApplicationsError] = useState("");
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [isApplicationsModalOpen, setIsApplicationsModalOpen] = useState(false);
   const [customerApplications, setCustomerApplications] = useState([]);
   const [providerApplications, setProviderApplications] = useState([]);
   const [providerActivityLoadedAt, setProviderActivityLoadedAt] = useState("");
@@ -291,9 +324,30 @@ export default function App() {
   const [messageTaskId, setMessageTaskId] = useState("");
   const [messageBody, setMessageBody] = useState("");
   const [taskMessages, setTaskMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [isMessagesModalOpen, setIsMessagesModalOpen] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [adminDataHealth, setAdminDataHealth] = useState(null);
+  const [adminDataStatus, setAdminDataStatus] = useState("");
+  const [archivedTasks, setArchivedTasks] = useState([]);
+  const [adminAuditLog, setAdminAuditLog] = useState([]);
 
   const authHeader = { headers: { Authorization: `Bearer ${token}` } };
   const isAdmin = currentUserRole === "admin";
+
+  useEffect(() => {
+    if (view === "home" || isAccountModalOpen) return undefined;
+
+    const scrollTimer = window.setTimeout(() => {
+      activeViewRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      activeViewRef.current?.focus({ preventScroll: true });
+    }, 50);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [view, activeMode, isAccountModalOpen]);
 
   const getErrorMessage = (err, fallback) => {
     if (!err.response) {
@@ -344,10 +398,28 @@ export default function App() {
         "Accept a provider before leaving a review.",
       "Provider profile already exists for this user":
         "You already have a provider profile. Use Update Provider Profile instead.",
+      "Provider profile needs trust details before approval":
+        "Complete the provider trust checklist before approval.",
+      "Admin note is required when rejecting provider profile":
+        "Add a short reason before rejecting this provider.",
       "Invalid credentials":
         "The phone number or password is incorrect.",
       "Phone already registered":
         "This phone number is already registered. Please log in instead.",
+      "Current password is incorrect":
+        "The current password is incorrect.",
+      "New password must be different":
+        "Choose a new password that is different from your current password.",
+      "Too many failed login attempts. Try again later.":
+        "Too many failed login attempts. Please wait and try again later.",
+      "Admin access required":
+        "Admin access is required for this action.",
+      "Task not found":
+        "This task could not be found. Refresh the marketplace and try again.",
+      "Task is already archived":
+        "This task is already archived.",
+      "Only archived tasks can be restored":
+        "Only hidden tasks can be restored.",
     };
 
     if (Array.isArray(detail)) {
@@ -376,6 +448,8 @@ export default function App() {
     setFullName("");
     setPhone("");
     setPassword("");
+    setCurrentPassword("");
+    setNewPassword("");
     setIsAccountModalOpen(false);
     setView(nextMode === "admin" ? "marketplace" : "home");
   };
@@ -459,6 +533,38 @@ export default function App() {
     }
   };
 
+  const changePassword = async () => {
+    try {
+      if (!token) {
+        setView("account");
+        return alert("Login first to update your password.");
+      }
+
+      if (currentPassword.length < 6) {
+        return alert("Current password must be at least 6 characters.");
+      }
+
+      if (newPassword.length < 6) {
+        return alert("New password must be at least 6 characters.");
+      }
+
+      await api.patch(
+        "/api/auth/password",
+        {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+        authHeader
+      );
+
+      setCurrentPassword("");
+      setNewPassword("");
+      alert("Password updated successfully.");
+    } catch (err) {
+      alert(getErrorMessage(err, "Password update failed"));
+    }
+  };
+
   const logout = () => {
     sessionStorage.removeItem("token");
     sessionStorage.removeItem("currentUser");
@@ -471,7 +577,18 @@ export default function App() {
     setCurrentUserId(0);
     setCurrentUserRole("customer");
     setActiveMode("customer");
+    setCurrentPassword("");
+    setNewPassword("");
     setView("home");
+    setApplications([]);
+    setApplicationsTask(null);
+    setApplicationsError("");
+    setApplicationsLoading(false);
+    setIsApplicationsModalOpen(false);
+    setMessagesLoading(false);
+    setIsMessagesModalOpen(false);
+    setIsReviewModalOpen(false);
+    setIsMatchesModalOpen(false);
 
     alert("Logged out");
   };
@@ -566,6 +683,7 @@ export default function App() {
         loadTasks(),
         loadProviders(),
         loadVerificationQueue(),
+        loadAdminDataHealth({ silent: true }),
       ]);
       setMarketplaceSyncedAt(getRefreshTime());
       return;
@@ -620,6 +738,136 @@ export default function App() {
     }
   };
 
+  const loadAdminDataHealth = async ({ silent = false } = {}) => {
+    try {
+      if (!token) {
+        if (silent) return null;
+        setView("account");
+        return alert("Login first to view admin data controls.");
+      }
+
+      if (!isAdmin) {
+        if (silent) return null;
+        return alert("Admin access is required to view data controls.");
+      }
+
+      const [healthResponse, archivedResponse, auditResponse] = await Promise.all([
+        api.get("/api/admin/data-health", authHeader),
+        api.get("/api/admin/tasks/archived", authHeader),
+        api.get("/api/admin/audit-log?limit=8", authHeader),
+      ]);
+      setAdminDataHealth(healthResponse.data);
+      setArchivedTasks(archivedResponse.data);
+      setAdminAuditLog(auditResponse.data);
+      setAdminDataStatus(`Last scanned ${getRefreshTime()}`);
+      return healthResponse.data;
+    } catch (err) {
+      if (silent) return null;
+      alert(getErrorMessage(err, "Failed to load admin data health"));
+      return null;
+    }
+  };
+
+  const archiveTask = async (task) => {
+    try {
+      if (!token) {
+        setView("account");
+        return alert("Login first to manage marketplace records.");
+      }
+
+      if (!isAdmin) {
+        return alert("Admin access is required to hide marketplace records.");
+      }
+
+      const confirmed = window.confirm(
+        `Hide "${task.title}" from the public marketplace? You can restore it from Data Management.`
+      );
+
+      if (!confirmed) return;
+
+      await api.patch(
+        `/api/admin/tasks/${task.id}/archive`,
+        { reason: "Archived from admin marketplace" },
+        authHeader
+      );
+
+      await Promise.all([
+        loadTasks(),
+        loadAdminDataHealth({ silent: true }),
+      ]);
+      setMarketplaceSyncedAt(getRefreshTime());
+      alert("Task hidden from the public marketplace.");
+    } catch (err) {
+      alert(getErrorMessage(err, "Failed to hide task"));
+    }
+  };
+
+  const restoreArchivedTask = async (taskId) => {
+    try {
+      if (!token) {
+        setView("account");
+        return alert("Login first to restore marketplace records.");
+      }
+
+      if (!isAdmin) {
+        return alert("Admin access is required to restore marketplace records.");
+      }
+
+      await api.patch(`/api/admin/tasks/${taskId}/restore`, {}, authHeader);
+      await Promise.all([
+        loadTasks(),
+        loadAdminDataHealth({ silent: true }),
+      ]);
+      setMarketplaceSyncedAt(getRefreshTime());
+      alert("Task restored to the public marketplace.");
+    } catch (err) {
+      alert(getErrorMessage(err, "Failed to restore task"));
+    }
+  };
+
+  const cleanupWorkflowTestData = async () => {
+    try {
+      if (!token) {
+        setView("account");
+        return alert("Login first to clean workflow test data.");
+      }
+
+      if (!isAdmin) {
+        return alert("Admin access is required to clean workflow test data.");
+      }
+
+      const confirmed = window.confirm(
+        "Clean only known workflow-test records? Real customer tasks and provider profiles are not included in this cleanup."
+      );
+
+      if (!confirmed) return;
+
+      const res = await api.post("/api/admin/cleanup-workflow-tests", {}, authHeader);
+      setAdminDataHealth({
+        summary: res.data.summary,
+        workflow_test_candidates: res.data.workflow_test_candidates,
+      });
+
+      const deletedTotal = Object.values(res.data.deleted || {}).reduce(
+        (sum, count) => sum + Number(count || 0),
+        0
+      );
+
+      setAdminDataStatus(`Cleanup completed ${getRefreshTime()}`);
+      alert(`Workflow test cleanup complete. Removed ${deletedTotal} record${deletedTotal === 1 ? "" : "s"}.`);
+
+      await Promise.all([
+        loadTasks(),
+        loadProviders(),
+        loadVerificationQueue({ silent: true }),
+        loadAdminDataHealth({ silent: true }),
+      ]);
+      setMarketplaceSyncedAt(getRefreshTime());
+    } catch (err) {
+      alert(getErrorMessage(err, "Workflow test cleanup failed"));
+    }
+  };
+
   const refreshMarketplace = async () => {
     await Promise.all([loadTasks(), loadProviders()]);
     setMarketplaceSyncedAt(getRefreshTime());
@@ -629,6 +877,12 @@ export default function App() {
     sessionStorage.setItem("activeMode", mode);
     setActiveMode(mode);
     setApplicationsError("");
+    setApplicationsLoading(false);
+    setIsApplicationsModalOpen(false);
+    setMessagesLoading(false);
+    setIsMessagesModalOpen(false);
+    setIsReviewModalOpen(false);
+    setIsMatchesModalOpen(false);
 
     if (mode === "admin" && isAdmin) {
       setView("marketplace");
@@ -636,6 +890,7 @@ export default function App() {
         loadTasks(),
         loadProviders(),
         loadVerificationQueue({ silent: true }),
+        loadAdminDataHealth({ silent: true }),
       ]).then(() => setMarketplaceSyncedAt(getRefreshTime()));
     }
   };
@@ -650,6 +905,8 @@ export default function App() {
     setApplications([]);
     setApplicationsTask(null);
     setApplicationsError("");
+    setApplicationsLoading(false);
+    setIsApplicationsModalOpen(false);
     setCustomerApplications([]);
     setProviderApplications([]);
     setProviderActivityLoadedAt("");
@@ -657,6 +914,10 @@ export default function App() {
     setVerificationQueue([]);
     setTaskMessages([]);
     setSelectedTask(null);
+    setIsMatchesModalOpen(false);
+    setMessagesLoading(false);
+    setIsMessagesModalOpen(false);
+    setIsReviewModalOpen(false);
     alert("Demo marketplace data loaded.");
   };
 
@@ -667,6 +928,8 @@ export default function App() {
     setApplications([]);
     setApplicationsTask(null);
     setApplicationsError("");
+    setApplicationsLoading(false);
+    setIsApplicationsModalOpen(false);
     setCustomerApplications([]);
     setProviderApplications([]);
     setProviderActivityLoadedAt("");
@@ -674,6 +937,10 @@ export default function App() {
     setVerificationQueue([]);
     setTaskMessages([]);
     setSelectedTask(null);
+    setIsMatchesModalOpen(false);
+    setMessagesLoading(false);
+    setIsMessagesModalOpen(false);
+    setIsReviewModalOpen(false);
     alert("Demo data cleared from this browser session.");
   };
 
@@ -708,6 +975,15 @@ export default function App() {
     } catch {
       setSelectedProviderReviews([]);
     }
+  };
+
+  const closeApplicationsModal = () => {
+    setIsApplicationsModalOpen(false);
+  };
+
+  const openProviderProfileFromApplications = (provider) => {
+    setIsApplicationsModalOpen(false);
+    openProviderProfile(provider);
   };
 
   const removeSavedProvider = (providerId) => {
@@ -838,6 +1114,8 @@ export default function App() {
   const loadMatches = async (taskId) => {
     try {
       setSelectedTask(taskId);
+      setMatches([]);
+      setIsMatchesModalOpen(true);
 
       if (taskId < 0) {
         const task = demoTasks.find((item) => item.id === taskId);
@@ -999,11 +1277,22 @@ export default function App() {
         }
 
         if (activeMode === "admin" && isAdmin) {
-          const queueResponse = await api.get(
-            "/api/providers/verification-queue",
-            requestConfig
-          );
+          const [
+            queueResponse,
+            dataHealthResponse,
+            archivedResponse,
+            auditResponse,
+          ] = await Promise.all([
+            api.get("/api/providers/verification-queue", requestConfig),
+            api.get("/api/admin/data-health", requestConfig),
+            api.get("/api/admin/tasks/archived", requestConfig),
+            api.get("/api/admin/audit-log?limit=8", requestConfig),
+          ]);
           setVerificationQueue(queueResponse.data);
+          setAdminDataHealth(dataHealthResponse.data);
+          setArchivedTasks(archivedResponse.data);
+          setAdminAuditLog(auditResponse.data);
+          setAdminDataStatus(`Last scanned ${getRefreshTime()}`);
         }
 
         setMarketplaceSyncedAt(getRefreshTime());
@@ -1020,17 +1309,30 @@ export default function App() {
 
   const loadApplications = async (taskOrId) => {
     const taskId = typeof taskOrId === "object" ? taskOrId.id : taskOrId;
+    const numericTaskId = Number(taskId);
+    const taskForReview =
+      typeof taskOrId === "object"
+        ? taskOrId
+        : tasks.find((task) => Number(task.id) === numericTaskId) || null;
+
+    if (numericTaskId >= 0 && !token) {
+      setView("account");
+      return alert("Login first to review task applications.");
+    }
+
+    if (numericTaskId >= 0 && activeMode !== "customer") {
+      return alert("Switch to Customer Mode to review applications.");
+    }
+
+    setApplicationsError("");
+    setApplications([]);
+    setApplicationsTask(taskForReview);
+    setApplicationsLoading(true);
+    setIsApplicationsModalOpen(true);
 
     try {
-      setApplicationsError("");
-      setApplicationsTask(
-        typeof taskOrId === "object"
-          ? taskOrId
-          : tasks.find((task) => task.id === taskId) || null
-      );
-
-      if (taskId < 0) {
-        const task = demoTasks.find((item) => item.id === taskId);
+      if (numericTaskId < 0) {
+        const task = demoTasks.find((item) => item.id === numericTaskId);
         const applicant = demoProviders.find(
           (provider) => provider.skill_category === task?.category
         );
@@ -1040,7 +1342,7 @@ export default function App() {
             ? [
                 {
                   application_id: -401,
-                  task_id: taskId,
+                  task_id: numericTaskId,
                   status: task?.status === "assigned" ? "accepted" : "pending",
                   provider_id: applicant.id,
                   business_name: applicant.business_name,
@@ -1056,15 +1358,6 @@ export default function App() {
         return;
       }
 
-      if (!token) {
-        setView("account");
-        return alert("Login first to review task applications.");
-      }
-
-      if (activeMode !== "customer") {
-        return alert("Switch to Customer Mode to review applications.");
-      }
-
       const res = await api.get(`/api/applications/task/${taskId}`, authHeader);
       setApplications(res.data);
       await loadCustomerApplications();
@@ -1075,7 +1368,8 @@ export default function App() {
       );
       setApplications([]);
       setApplicationsError(message);
-      alert(message);
+    } finally {
+      setApplicationsLoading(false);
     }
   };
 
@@ -1217,6 +1511,7 @@ export default function App() {
       setReviewTaskId("");
       setReviewRating("5");
       setReviewComment("");
+      setIsReviewModalOpen(false);
       await loadTasks();
     } catch (err) {
       alert(getErrorMessage(err, "Review failed"));
@@ -1234,11 +1529,14 @@ export default function App() {
         return alert("Choose an assigned task first.");
       }
 
+      setMessagesLoading(true);
       const res = await api.get(`/api/messages/task/${taskId}`, authHeader);
       setTaskMessages(res.data);
       setMessageTaskId(String(taskId));
     } catch (err) {
       alert(getErrorMessage(err, "Failed to load messages"));
+    } finally {
+      setMessagesLoading(false);
     }
   };
 
@@ -1307,12 +1605,17 @@ export default function App() {
     const matchesSearch = [service, businessName, bio, serviceArea].some((value) =>
       value.includes(search)
     );
+    const matchesArea = [city, serviceArea].some((value) => value.includes(area));
 
-    return matchesSearch && city.includes(area);
-  });
+    return isProviderCustomerVisible(provider) && matchesSearch && matchesArea;
+  }).sort((left, right) =>
+    getProviderDirectoryScore(right, searchCategory, searchLocation) -
+    getProviderDirectoryScore(left, searchCategory, searchLocation)
+  );
   const approvedProviders = providers.filter(
     (provider) => provider.approval_status === "approved"
   );
+  const customerVisibleProviders = providers.filter(isProviderCustomerVisible);
   const pendingProviders = providers.filter(
     (provider) => provider.approval_status === "pending"
   );
@@ -1346,6 +1649,44 @@ export default function App() {
   const customerReviewTasks = completedTasks.filter(
     (task) => task.customer_id === currentUserId
   );
+  const closeMessagesModal = () => {
+    setIsMessagesModalOpen(false);
+  };
+  const openMessagesModal = (taskId = "") => {
+    if (!token) {
+      setView("account");
+      return alert("Login first to view task messages.");
+    }
+
+    const selectedTaskId =
+      taskId || messageTaskId || messageEligibleTasks[0]?.id || "";
+
+    setIsMessagesModalOpen(true);
+
+    if (selectedTaskId) {
+      setMessageTaskId(String(selectedTaskId));
+      setTaskMessages([]);
+      loadMessages(selectedTaskId);
+    }
+  };
+  const closeReviewModal = () => {
+    setIsReviewModalOpen(false);
+  };
+  const openReviewModal = (taskId = "") => {
+    if (!token) {
+      setView("account");
+      return alert("Login first to review a completed task.");
+    }
+
+    const selectedTaskId =
+      taskId || reviewTaskId || customerReviewTasks[0]?.id || "";
+
+    if (selectedTaskId) {
+      setReviewTaskId(String(selectedTaskId));
+    }
+
+    setIsReviewModalOpen(true);
+  };
   const providerServiceAreas = [
     myProviderProfile?.city,
     ...(myProviderProfile?.service_area || "")
@@ -1354,6 +1695,14 @@ export default function App() {
   ]
     .filter(Boolean)
     .map((area) => area.toLowerCase());
+  const providerTrustDraft = {
+    bio: providerBio,
+    experience_years: providerExperienceYears ? Number(providerExperienceYears) : 0,
+    service_area: providerServiceArea || providerCity,
+    availability: providerAvailability,
+    contact_phone: providerContactPhone,
+    id_verification_status: providerContactPhone.trim() ? "submitted" : "not_submitted",
+  };
   const providerMatchingOpenTasks = myProviderProfile
     ? tasks.filter((task) => {
         const taskCategory = task.category?.toLowerCase() || "";
@@ -1369,6 +1718,9 @@ export default function App() {
     : [];
   const providerActionableOpenTasks =
     myProviderApprovalStatus === "approved" ? providerMatchingOpenTasks : [];
+  const selectedMatchTask = tasks.find(
+    (task) => Number(task.id) === Number(selectedTask)
+  ) || demoTasks.find((task) => Number(task.id) === Number(selectedTask));
   const customerNotifications = [
     {
       id: "customer-applications",
@@ -1386,7 +1738,7 @@ export default function App() {
       text: myAssignedTasks.length
         ? "Coordinate with accepted providers and complete finished work."
         : "No assigned tasks waiting for completion.",
-      action: "View Tasks",
+      action: "Open Messages",
     },
     {
       id: "customer-reviews",
@@ -1395,7 +1747,7 @@ export default function App() {
       text: myCompletedTasks.length
         ? "Submit reviews for completed jobs to improve trust."
         : "No completed tasks waiting for review.",
-      action: "Review Jobs",
+      action: "Leave Review",
     },
   ];
   const providerNotifications = [
@@ -1416,7 +1768,7 @@ export default function App() {
       text: acceptedProviderApplications.length
         ? "Customers accepted one or more of your applications."
         : "No accepted applications yet.",
-      action: "View Activity",
+      action: "Open Messages",
     },
     {
       id: "provider-pending",
@@ -1455,6 +1807,52 @@ export default function App() {
         ? "These customer tasks still need provider applications."
         : "No open customer requests right now.",
       action: "Refresh Tasks",
+    },
+  ];
+  const manualPilotMessages = [
+    {
+      id: "provider-invites",
+      status: customerVisibleProviders.length >= 2 ? "ready" : "send",
+      title: "Provider invitations",
+      detail: customerVisibleProviders.length >= 2
+        ? `${customerVisibleProviders.length} trust-ready providers are visible.`
+        : "Use the provider invitation template to prepare 2 to 5 trusted providers.",
+      actionLabel: "Refresh Providers",
+      action: loadProviders,
+    },
+    {
+      id: "provider-reminders",
+      status: pendingProviders.length ? "send" : "ready",
+      title: "Provider profile reminders",
+      detail: pendingProviders.length
+        ? `${pendingProviders.length} provider profile${pendingProviders.length === 1 ? "" : "s"} waiting for review or follow-up.`
+        : "No provider approval reminders needed right now.",
+      actionLabel: pendingProviders.length ? "Load Queue" : "",
+      action: pendingProviders.length ? loadVerificationQueue : null,
+    },
+    {
+      id: "customer-invites",
+      status: openTasks ? "ready" : "send",
+      title: "Customer invitations",
+      detail: openTasks
+        ? `${openTasks} open customer request${openTasks === 1 ? "" : "s"} available for pilot testing.`
+        : "Use the customer invitation template to get one realistic task posted.",
+      actionLabel: "Refresh Tasks",
+      action: refreshMarketplace,
+    },
+    {
+      id: "feedback",
+      status: completedTasks.length ? "send" : "watch",
+      title: "After-test feedback",
+      detail: completedTasks.length
+        ? `Use the feedback template for ${completedTasks.length} completed task${completedTasks.length === 1 ? "" : "s"}.`
+        : "Send feedback questions after the first completed pilot task.",
+    },
+    {
+      id: "password-help",
+      status: "watch",
+      title: "Password help",
+      detail: "If a pilot user forgets a password, verify them directly and never ask for passwords in group messages.",
     },
   ];
   const activeNotifications =
@@ -1499,6 +1897,282 @@ export default function App() {
         : globalNotificationCount
           ? `${globalNotificationCount} provider update${globalNotificationCount === 1 ? "" : "s"} waiting`
           : "No provider updates waiting";
+  const activeViewTitle = {
+    account: "Account",
+    customer: "Post a Task",
+    provider: myProviderProfile ? "Update Provider Profile" : "Become a Provider",
+    marketplace:
+      activeMode === "admin"
+        ? "Marketplace Operations"
+        : activeMode === "provider"
+          ? "Provider Workspace"
+          : "Customer Workspace",
+  }[view] || "AddisTask";
+  const activeViewDescription = {
+    account: "Sign in or create an account.",
+    customer: "Create a customer task for local providers.",
+    provider: "Create or update the profile customers will review.",
+    marketplace:
+      activeMode === "admin"
+        ? "Review marketplace activity and admin controls."
+        : activeMode === "provider"
+          ? "Track approval, matching tasks, and applications."
+          : "Track posted tasks, applications, and provider choices.",
+  }[view] || "";
+  const adminSummary = adminDataHealth?.summary || {};
+  const workflowCandidates = adminDataHealth?.workflow_test_candidates || {};
+  const workflowCandidateTotal = Object.values(workflowCandidates).reduce(
+    (sum, count) => sum + Number(count || 0),
+    0
+  );
+  const visibleMarketplaceTasks = [...tasks]
+    .filter((task) => task.status !== "archived")
+    .sort((left, right) => {
+      const leftDate = left.created_at ? new Date(left.created_at).getTime() : 0;
+      const rightDate = right.created_at ? new Date(right.created_at).getTime() : 0;
+
+      if (leftDate !== rightDate) return rightDate - leftDate;
+      return (right.id || 0) - (left.id || 0);
+    });
+  const visibleTaskReviewSummary = visibleMarketplaceTasks.reduce(
+    (summary, task) => {
+      const status = task.status || "open";
+      return {
+        ...summary,
+        [status]: (summary[status] || 0) + 1,
+      };
+    },
+    { open: 0, assigned: 0, completed: 0 }
+  );
+  const getTaskReviewHint = (task) => {
+    const combinedText = `${task.title || ""} ${task.description || ""}`.toLowerCase();
+
+    if (
+      combinedText.includes("test") ||
+      combinedText.includes("demo") ||
+      combinedText.includes("temporary")
+    ) {
+      return "Looks like sample or test data";
+    }
+
+    if (task.status === "completed") {
+      return "Completed record; hide before pilot if it is not real";
+    }
+
+    if (task.status === "assigned") {
+      return "Assigned record; keep only if this is a real active job";
+    }
+
+    return "Visible open request";
+  };
+  const firstAdminSetupChecklist = [
+    {
+      id: "owner-session",
+      title: "Owner account signed in",
+      detail: isAdmin
+        ? `${currentUser || "Owner"} is signed in with admin access.`
+        : "Sign in with the owner account before preparing the pilot.",
+      status: isAdmin ? "ready" : "attention",
+      statusLabel: isAdmin ? "Ready" : "Needs login",
+    },
+    {
+      id: "account-panel",
+      title: "Account access checked",
+      detail: "Open Account from your name in the top bar and confirm Update Password is available.",
+      status: "todo",
+      statusLabel: "Check once",
+      actionLabel: "Open Account",
+      action: () => setIsAccountModalOpen(true),
+    },
+    {
+      id: "admin-controls",
+      title: "Admin controls visible",
+      detail: "Confirm Marketplace Operations, Data Management, Provider Approval Queue, and archive controls are visible only in Admin Mode.",
+      status: isAdmin ? "ready" : "attention",
+      statusLabel: isAdmin ? "Visible" : "Needs admin",
+    },
+    {
+      id: "data-scan",
+      title: "Data scan completed",
+      detail: adminDataHealth
+        ? `Latest scan found ${adminSummary.tasks ?? 0} task records and ${adminSummary.archived_tasks ?? 0} hidden tasks.`
+        : "Run Scan Data before inviting pilot users.",
+      status: adminDataHealth ? "ready" : "attention",
+      statusLabel: adminDataHealth ? "Scanned" : "Needs scan",
+      actionLabel: "Scan Data",
+      action: () => loadAdminDataHealth(),
+    },
+    {
+      id: "provider-queue",
+      title: "Provider queue reviewed",
+      detail: pendingProviders.length
+        ? `${pendingProviders.length} provider profile${pendingProviders.length === 1 ? "" : "s"} waiting for approval review.`
+        : "No provider profiles are waiting right now.",
+      status: pendingProviders.length ? "attention" : "ready",
+      statusLabel: pendingProviders.length ? "Review" : "Clear",
+      actionLabel: pendingProviders.length ? "Load Queue" : "Refresh Providers",
+      action: pendingProviders.length ? loadVerificationQueue : loadProviders,
+    },
+    {
+      id: "owner-docs",
+      title: "Owner notes ready",
+      detail: "Use FIRST_ADMIN_SETUP, PILOT_LAUNCH_CHECKLIST, and PILOT_COMMUNICATION_TEMPLATES while preparing the pilot.",
+      status: "ready",
+      statusLabel: "Ready",
+    },
+  ];
+  const firstAdminReadyCount = firstAdminSetupChecklist.filter(
+    (item) => item.status === "ready"
+  ).length;
+  const pilotLaunchChecklist = [
+    {
+      id: "admin-access",
+      title: "Admin account ready",
+      detail: isAdmin
+        ? `${currentUser || "Admin"} is signed in with admin tools enabled.`
+        : "Sign in with the owner admin account before the pilot.",
+      status: isAdmin ? "ready" : "attention",
+      statusLabel: isAdmin ? "Ready" : "Needs admin",
+    },
+    {
+      id: "account-safety",
+      title: "Account safety basics",
+      detail: "Logged-in users can update passwords, and repeated failed logins are temporarily limited.",
+      status: "ready",
+      statusLabel: "Ready",
+    },
+    {
+      id: "provider-supply",
+      title: "Trusted provider supply",
+      detail: customerVisibleProviders.length
+        ? `${customerVisibleProviders.length} approved trust-ready provider${customerVisibleProviders.length === 1 ? "" : "s"} visible to customers.`
+        : pendingProviders.length
+          ? `${pendingProviders.length} provider profile${pendingProviders.length === 1 ? "" : "s"} waiting for approval.`
+          : "Approve at least one trust-ready provider before inviting customers.",
+      status: customerVisibleProviders.length ? "ready" : "attention",
+      statusLabel: customerVisibleProviders.length ? "Ready" : "Needs provider",
+      actionLabel: pendingProviders.length ? "Load Queue" : "Refresh Providers",
+      action: pendingProviders.length ? loadVerificationQueue : loadProviders,
+    },
+    {
+      id: "marketplace-cleanup",
+      title: "Marketplace records reviewed",
+      detail: adminDataHealth
+        ? `${visibleMarketplaceTasks.length} visible task${visibleMarketplaceTasks.length === 1 ? "" : "s"} and ${archivedTasks.length} hidden task${archivedTasks.length === 1 ? "" : "s"} after the latest scan.`
+        : "Scan Data, then hide old demos or duplicate records before showing the app.",
+      status: adminDataHealth ? "ready" : "attention",
+      statusLabel: adminDataHealth ? "Reviewed" : "Needs scan",
+      actionLabel: "Scan Data",
+      action: () => loadAdminDataHealth(),
+    },
+    {
+      id: "customer-demand",
+      title: "Customer task ready",
+      detail: openTasks
+        ? `${openTasks} open customer request${openTasks === 1 ? "" : "s"} ready for providers to review.`
+        : "Create one realistic customer task so providers can test the full flow.",
+      status: openTasks ? "ready" : "attention",
+      statusLabel: openTasks ? "Ready" : "Needs task",
+      actionLabel: "Refresh Tasks",
+      action: refreshMarketplace,
+    },
+    {
+      id: "pilot-script",
+      title: "Pilot script prepared",
+      detail: "Run one customer, one provider, and one admin through the same steps.",
+      status: "ready",
+      statusLabel: "Ready",
+    },
+    {
+      id: "observation-notes",
+      title: "Observation notes",
+      detail: "During the pilot, write down where users hesitate, scroll, or ask for help.",
+      status: "todo",
+      statusLabel: "Pilot day",
+    },
+  ];
+  const pilotLaunchReadyCount = pilotLaunchChecklist.filter(
+    (item) => item.status === "ready"
+  ).length;
+  const pilotRunChecklist = [
+    {
+      id: "pilot-task",
+      title: "Customer task posted",
+      detail: openTasks
+        ? `${openTasks} open customer request${openTasks === 1 ? "" : "s"} ready for the pilot run.`
+        : "Post one realistic customer task before asking a provider to apply.",
+      status: openTasks ? "ready" : "attention",
+      statusLabel: openTasks ? "Ready" : "Needs task",
+      actionLabel: "Refresh Tasks",
+      action: refreshMarketplace,
+    },
+    {
+      id: "pilot-provider",
+      title: "Trust-ready provider available",
+      detail: customerVisibleProviders.length
+        ? `${customerVisibleProviders.length} approved trust-ready provider${customerVisibleProviders.length === 1 ? "" : "s"} visible to customers.`
+        : "Approve one trust-ready provider before running the customer/provider flow.",
+      status: customerVisibleProviders.length ? "ready" : "attention",
+      statusLabel: customerVisibleProviders.length ? "Ready" : "Needs provider",
+      actionLabel: customerVisibleProviders.length ? "Refresh Providers" : "Load Queue",
+      action: customerVisibleProviders.length ? loadProviders : loadVerificationQueue,
+    },
+    {
+      id: "pilot-application",
+      title: "Provider application recorded",
+      detail: adminDataHealth
+        ? `${adminSummary.applications ?? 0} provider application${Number(adminSummary.applications || 0) === 1 ? "" : "s"} recorded.`
+        : "Scan Data after the provider applies to confirm application activity.",
+      status: Number(adminSummary.applications || 0) > 0 ? "ready" : "todo",
+      statusLabel: Number(adminSummary.applications || 0) > 0 ? "Seen" : "Watch",
+      actionLabel: "Scan Data",
+      action: () => loadAdminDataHealth(),
+    },
+    {
+      id: "pilot-acceptance",
+      title: "Customer accepted provider",
+      detail: assignedTasks || completedTasks.length
+        ? `${assignedTasks} assigned and ${completedTasks.length} completed task${completedTasks.length === 1 ? "" : "s"} found.`
+        : "After a provider applies, the customer should accept one provider from Manage Task.",
+      status: assignedTasks || completedTasks.length ? "ready" : "todo",
+      statusLabel: assignedTasks || completedTasks.length ? "Done" : "Watch",
+      actionLabel: "Refresh Tasks",
+      action: refreshMarketplace,
+    },
+    {
+      id: "pilot-messages",
+      title: "Messages tested",
+      detail: adminDataHealth
+        ? `${adminSummary.messages ?? 0} task message${Number(adminSummary.messages || 0) === 1 ? "" : "s"} recorded.`
+        : "Scan Data after customer and provider check Messages.",
+      status: Number(adminSummary.messages || 0) > 0 ? "ready" : "todo",
+      statusLabel: Number(adminSummary.messages || 0) > 0 ? "Seen" : "Watch",
+      actionLabel: "Scan Data",
+      action: () => loadAdminDataHealth(),
+    },
+    {
+      id: "pilot-review",
+      title: "Completion and review",
+      detail: adminDataHealth
+        ? `${completedTasks.length} completed task${completedTasks.length === 1 ? "" : "s"} and ${adminSummary.reviews ?? 0} review${Number(adminSummary.reviews || 0) === 1 ? "" : "s"} recorded.`
+        : "Scan Data after the customer completes the task and leaves a review.",
+      status: completedTasks.length && Number(adminSummary.reviews || 0) > 0 ? "ready" : "todo",
+      statusLabel: completedTasks.length && Number(adminSummary.reviews || 0) > 0 ? "Done" : "Watch",
+      actionLabel: "Scan Data",
+      action: () => loadAdminDataHealth(),
+    },
+  ];
+  const pilotRunReadyCount = pilotRunChecklist.filter(
+    (item) => item.status === "ready"
+  ).length;
+  const formatAdminAction = (action = "") => {
+    const labels = {
+      archive_task: "Task hidden",
+      restore_task: "Task restored",
+    };
+
+    return labels[action] || action.replaceAll("_", " ");
+  };
   const runNotificationAction = (notificationId) => {
     if (notificationId === "admin-verification") {
       loadVerificationQueue();
@@ -1515,8 +2189,47 @@ export default function App() {
       return;
     }
 
-    if (activeMode === "customer") {
+    if (activeMode === "customer" && notificationId === "customer-applications") {
+      const firstPendingApplication = pendingCustomerApplications[0];
+
+      if (firstPendingApplication?.task_id) {
+        const taskForReview =
+          tasks.find((task) => Number(task.id) === Number(firstPendingApplication.task_id)) ||
+          {
+            id: firstPendingApplication.task_id,
+            title: firstPendingApplication.task_title || "Selected task",
+          };
+
+        loadApplications(taskForReview);
+        return;
+      }
+
       loadCustomerApplications();
+      return;
+    }
+
+    if (activeMode === "customer" && notificationId === "customer-assigned") {
+      openMessagesModal(myAssignedTasks[0]?.id || "");
+      return;
+    }
+
+    if (activeMode === "customer" && notificationId === "customer-reviews") {
+      openReviewModal(customerReviewTasks[0]?.id || "");
+      return;
+    }
+
+    if (activeMode === "provider" && notificationId === "provider-accepted") {
+      openMessagesModal(acceptedProviderApplications[0]?.task_id || "");
+      return;
+    }
+
+    if (activeMode === "provider" && notificationId === "provider-approval") {
+      setView("provider");
+      return;
+    }
+
+    if (activeMode === "provider" && notificationId === "provider-pending") {
+      loadProviderApplications();
       return;
     }
 
@@ -1581,48 +2294,95 @@ export default function App() {
       <div className="form-heading">
         <span className="eyebrow">Secure access</span>
         <h2>Account</h2>
-        <p className="muted">Sign in to post tasks, offer services, or manage approvals.</p>
+        <p className="muted">
+          {token
+            ? "Manage your account access."
+            : "Sign in to post tasks, offer services, or manage approvals."}
+        </p>
       </div>
 
-      <label className="field-label">
-        Full name
-        <input
-          placeholder="Your name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-      </label>
-
-      <label className="field-label">
-        Phone number
-        <input
-          placeholder="09..."
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-      </label>
-
-      <label className="field-label">
-        Password
-        <input
-          placeholder="At least 6 characters"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </label>
-
       {!token ? (
-        <div className="button-row">
-          <button onClick={login}>Login</button>
-          <button className="secondary-btn inline" onClick={register}>
-            Register
+        <>
+          <label className="field-label">
+            Full name
+            <input
+              placeholder="Your name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </label>
+
+          <label className="field-label">
+            Phone number
+            <input
+              placeholder="09..."
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
+
+          <label className="field-label">
+            Password
+            <input
+              placeholder="At least 6 characters"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+
+          <div className="button-row">
+            <button onClick={login}>Login</button>
+            <button className="secondary-btn inline" onClick={register}>
+              Register
+            </button>
+          </div>
+
+          <div className="account-help-note">
+            <strong>Forgot your password?</strong>
+            <p>
+              During the pilot, contact the AddisTask owner directly. Verified
+              SMS or email reset will be added before a wider launch.
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className="account-security-panel">
+          <div className="account-session-card">
+            <span>Signed in</span>
+            <strong>{currentUser}</strong>
+            <small>{currentUserRole}</small>
+          </div>
+
+          <div className="password-change-card">
+            <strong>Update password</strong>
+            <label className="field-label">
+              Current password
+              <input
+                placeholder="Current password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+            </label>
+
+            <label className="field-label">
+              New password
+              <input
+                placeholder="At least 6 characters"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </label>
+
+            <button onClick={changePassword}>Update Password</button>
+          </div>
+
+          <button className="logout-btn" onClick={logout}>
+            Logout
           </button>
         </div>
-      ) : (
-        <button className="logout-btn" onClick={logout}>
-          Logout
-        </button>
       )}
     </>
   );
@@ -1642,6 +2402,7 @@ export default function App() {
         notificationUpdatedAt={marketplaceSyncedAt}
         setSearchCategory={setSearchCategory}
         openAccountModal={() => setIsAccountModalOpen(true)}
+        showHero={view === "home"}
       />
 
       {token && (
@@ -1678,9 +2439,21 @@ export default function App() {
       )}
 
       {view !== "home" && (
-        <button className="back-btn" onClick={() => setView("home")}>
-          Back Home
-        </button>
+        <div
+          className="active-workspace"
+          ref={activeViewRef}
+          tabIndex="-1"
+        >
+          <div>
+            <span className="eyebrow">Now viewing</span>
+            <strong>{activeViewTitle}</strong>
+            {activeViewDescription && <p>{activeViewDescription}</p>}
+          </div>
+
+          <button className="back-btn" onClick={() => setView("home")}>
+            Back Home
+          </button>
+        </div>
       )}
 
       {isAccountModalOpen && (
@@ -2210,6 +2983,8 @@ export default function App() {
             </label>
           </div>
 
+          <ProviderTrustSummary provider={providerTrustDraft} />
+
           <div className="provider-note">
             <strong>Approval required</strong>
             <p>After submitting, an admin must approve the provider profile before it can apply to customer tasks.</p>
@@ -2399,6 +3174,160 @@ export default function App() {
             </div>
 
             {activeMode === "admin" && (
+              <div className="owner-setup-panel">
+                <div className="pilot-launch-header">
+                  <div>
+                    <span className="eyebrow">Owner setup</span>
+                    <strong>First admin checklist</strong>
+                    <p>
+                      Confirm the owner account and admin controls before inviting pilot users.
+                    </p>
+                  </div>
+                  <span className="pilot-launch-score">
+                    {firstAdminReadyCount}/{firstAdminSetupChecklist.length} ready
+                  </span>
+                </div>
+
+                <div className="pilot-launch-list">
+                  {firstAdminSetupChecklist.map((item) => (
+                    <div className={`pilot-launch-item ${item.status}`} key={item.id}>
+                      <span className={`pilot-status-dot ${item.status}`} />
+                      <div>
+                        <div className="pilot-launch-item-header">
+                          <strong>{item.title}</strong>
+                          <span>{item.statusLabel}</span>
+                        </div>
+                        <p>{item.detail}</p>
+                      </div>
+                      {item.action && (
+                        <button
+                          className="secondary-btn inline"
+                          onClick={item.action}
+                        >
+                          {item.actionLabel}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeMode === "admin" && (
+              <div className="pilot-launch-panel">
+                <div className="pilot-launch-header">
+                  <div>
+                    <span className="eyebrow">Pilot readiness</span>
+                    <strong>Launch checklist</strong>
+                    <p>
+                      Quick owner review before inviting real customers and providers.
+                    </p>
+                  </div>
+                  <span className="pilot-launch-score">
+                    {pilotLaunchReadyCount}/{pilotLaunchChecklist.length} ready
+                  </span>
+                </div>
+
+                <div className="pilot-launch-list">
+                  {pilotLaunchChecklist.map((item) => (
+                    <div className={`pilot-launch-item ${item.status}`} key={item.id}>
+                      <span className={`pilot-status-dot ${item.status}`} />
+                      <div>
+                        <div className="pilot-launch-item-header">
+                          <strong>{item.title}</strong>
+                          <span>{item.statusLabel}</span>
+                        </div>
+                        <p>{item.detail}</p>
+                      </div>
+                      {item.action && (
+                        <button
+                          className="secondary-btn inline"
+                          onClick={item.action}
+                        >
+                          {item.actionLabel}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeMode === "admin" && (
+              <div className="manual-message-panel">
+                <div className="pilot-launch-header">
+                  <div>
+                    <span className="eyebrow">Manual outreach</span>
+                    <strong>Pilot messages to watch</strong>
+                    <p>
+                      Use the prepared templates while SMS/email automation is not active.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="manual-message-list">
+                  {manualPilotMessages.map((message) => (
+                    <div className={`manual-message-card ${message.status}`} key={message.id}>
+                      <span>{message.status === "send" ? "Send now" : message.status}</span>
+                      <div>
+                        <strong>{message.title}</strong>
+                        <p>{message.detail}</p>
+                      </div>
+                      {message.action && (
+                        <button
+                          className="secondary-btn inline"
+                          onClick={message.action}
+                        >
+                          {message.actionLabel}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeMode === "admin" && (
+              <div className="pilot-run-panel">
+                <div className="pilot-launch-header">
+                  <div>
+                    <span className="eyebrow">Pilot run</span>
+                    <strong>Controlled test flow</strong>
+                    <p>
+                      Track one customer/provider transaction from posted task to review.
+                    </p>
+                  </div>
+                  <span className="pilot-launch-score">
+                    {pilotRunReadyCount}/{pilotRunChecklist.length} done
+                  </span>
+                </div>
+
+                <div className="pilot-launch-list">
+                  {pilotRunChecklist.map((item) => (
+                    <div className={`pilot-launch-item ${item.status}`} key={item.id}>
+                      <span className={`pilot-status-dot ${item.status}`} />
+                      <div>
+                        <div className="pilot-launch-item-header">
+                          <strong>{item.title}</strong>
+                          <span>{item.statusLabel}</span>
+                        </div>
+                        <p>{item.detail}</p>
+                      </div>
+                      {item.action && (
+                        <button
+                          className="secondary-btn inline"
+                          onClick={item.action}
+                        >
+                          {item.actionLabel}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeMode === "admin" && (
               <div className="category-insights">
                 {categoryInsights.map((item) => (
                   <div className="insight-row" key={item.service}>
@@ -2411,6 +3340,232 @@ export default function App() {
               </div>
             )}
           </section>
+
+          {activeMode === "admin" && isAdmin && (
+          <section className="card wide admin-data-card">
+            <div className="section-header">
+              <div>
+                <h2>Data Management</h2>
+                <p className="muted">
+                  Scan records, clean known workflow-test data, and manage hidden tasks.
+                </p>
+              </div>
+
+              <div className="toolbar-actions">
+                <button onClick={() => loadAdminDataHealth()}>
+                  Scan Data
+                </button>
+                <button
+                  className="secondary-btn inline"
+                  disabled={!adminDataHealth || workflowCandidateTotal === 0}
+                  onClick={cleanupWorkflowTestData}
+                >
+                  Clean Workflow Tests
+                </button>
+              </div>
+            </div>
+
+            <div className="activity-summary data-health-grid">
+              <div>
+                <span>Users</span>
+                <strong>{adminSummary.users ?? "-"}</strong>
+              </div>
+              <div>
+                <span>Tasks</span>
+                <strong>{adminSummary.tasks ?? "-"}</strong>
+              </div>
+              <div>
+                <span>Hidden tasks</span>
+                <strong>{adminSummary.archived_tasks ?? "-"}</strong>
+              </div>
+              <div>
+                <span>Providers</span>
+                <strong>{adminSummary.providers ?? "-"}</strong>
+              </div>
+              <div>
+                <span>Applications</span>
+                <strong>{adminSummary.applications ?? "-"}</strong>
+              </div>
+              <div>
+                <span>Messages</span>
+                <strong>{adminSummary.messages ?? "-"}</strong>
+              </div>
+              <div>
+                <span>Reviews</span>
+                <strong>{adminSummary.reviews ?? "-"}</strong>
+              </div>
+            </div>
+
+            <div className="data-cleanup-panel">
+              <div>
+                <strong>Workflow-test cleanup candidates</strong>
+                <p>
+                  This cleanup targets only known automated workflow-test records,
+                  not real customer tasks or provider profiles.
+                </p>
+                {adminDataStatus && <span>{adminDataStatus}</span>}
+              </div>
+
+              <div className="cleanup-count-grid">
+                <div>
+                  <span>Users</span>
+                  <strong>{workflowCandidates.users ?? "-"}</strong>
+                </div>
+                <div>
+                  <span>Tasks</span>
+                  <strong>{workflowCandidates.tasks ?? "-"}</strong>
+                </div>
+                <div>
+                  <span>Providers</span>
+                  <strong>{workflowCandidates.providers ?? "-"}</strong>
+                </div>
+                <div>
+                  <span>Linked records</span>
+                  <strong>
+                    {adminDataHealth
+                      ? Number(workflowCandidates.applications || 0) +
+                        Number(workflowCandidates.messages || 0) +
+                        Number(workflowCandidates.reviews || 0)
+                      : "-"}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="data-cleanup-panel archive-control-panel active-task-review-panel">
+              <div>
+                <strong>Pilot cleanup review</strong>
+                <p>
+                  Review the tasks that are still visible in the marketplace.
+                  Hide old demos, duplicates, or records you do not want pilot
+                  users to see.
+                </p>
+                <button
+                  className="secondary-btn inline"
+                  onClick={refreshMarketplace}
+                >
+                  Refresh Visible Tasks
+                </button>
+              </div>
+
+              <div className="active-task-review">
+                <div className="cleanup-count-grid active-task-counts">
+                  <div>
+                    <span>Open</span>
+                    <strong>{visibleTaskReviewSummary.open || 0}</strong>
+                  </div>
+                  <div>
+                    <span>Assigned</span>
+                    <strong>{visibleTaskReviewSummary.assigned || 0}</strong>
+                  </div>
+                  <div>
+                    <span>Completed</span>
+                    <strong>{visibleTaskReviewSummary.completed || 0}</strong>
+                  </div>
+                  <div>
+                    <span>Visible total</span>
+                    <strong>{visibleMarketplaceTasks.length}</strong>
+                  </div>
+                </div>
+
+                <div className="archive-list review-task-list">
+                  {visibleMarketplaceTasks.length === 0 && (
+                    <div className="empty-state compact-empty">
+                      No visible marketplace tasks right now.
+                    </div>
+                  )}
+
+                  {visibleMarketplaceTasks.map((task) => (
+                    <div className="archive-task-row review-task-row" key={task.id}>
+                      <div>
+                        <strong>{task.title}</strong>
+                        <span>
+                          {task.category} | {task.location} | {task.status || "open"}
+                        </span>
+                        <p>{getTaskReviewHint(task)}</p>
+                      </div>
+                      <button
+                        className="secondary-btn inline danger-btn"
+                        onClick={() => archiveTask(task)}
+                      >
+                        Hide
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="data-cleanup-panel archive-control-panel">
+              <div>
+                <strong>Hidden marketplace tasks</strong>
+                <p>
+                  Archive old, duplicate, or unsafe tasks without deleting their
+                  history. Hidden tasks are not shown to customers or providers.
+                </p>
+                <button
+                  className="secondary-btn inline"
+                  onClick={() => loadAdminDataHealth()}
+                >
+                  Refresh Hidden Tasks
+                </button>
+              </div>
+
+              <div className="archive-list">
+                {archivedTasks.length === 0 && (
+                  <div className="empty-state compact-empty">
+                    No hidden tasks right now.
+                  </div>
+                )}
+
+                {archivedTasks.map((task) => (
+                  <div className="archive-task-row" key={task.id}>
+                    <div>
+                      <strong>{task.title}</strong>
+                      <span>{task.category} | {task.location}</span>
+                      <p>{task.archive_reason}</p>
+                    </div>
+                    <button
+                      className="secondary-btn inline"
+                      onClick={() => restoreArchivedTask(task.id)}
+                    >
+                      Restore
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="admin-audit-panel">
+              <div>
+                <strong>Admin history</strong>
+                <p>Recent marketplace management actions.</p>
+              </div>
+
+              <div className="audit-log-list">
+                {adminAuditLog.length === 0 && (
+                  <div className="empty-state compact-empty">
+                    No admin actions recorded yet.
+                  </div>
+                )}
+
+                {adminAuditLog.map((log) => (
+                  <div className="audit-log-row" key={log.id}>
+                    <strong>{formatAdminAction(log.action)}</strong>
+                    <span>
+                      {log.entity_type} #{log.entity_id}
+                    </span>
+                    <small>
+                      {log.created_at
+                        ? new Date(log.created_at).toLocaleString()
+                        : "Just now"}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+          )}
 
           {activeMode === "admin" && isAdmin && (
           <section className="card wide admin-queue-card">
@@ -2474,7 +3629,13 @@ export default function App() {
                     <p className="provider-bio">{provider.bio}</p>
                   )}
 
+                  <ProviderTrustSummary provider={provider} />
+
                   <div className="admin-review-grid">
+                    <div>
+                      <span>Trust readiness</span>
+                      <strong>{provider.trust_score ?? 0}%</strong>
+                    </div>
                     <div>
                       <span>Experience</span>
                       <strong>{provider.experience_years || 0} years</strong>
@@ -2504,7 +3665,11 @@ export default function App() {
                   <div className="admin-review-actions">
                     <div>
                       <strong>Review decision</strong>
-                      <p>Approve only when the profile has enough trust information for customers.</p>
+                      <p>
+                        {provider.trust_ready === false
+                          ? "Complete the trust checklist before approval."
+                          : "Approve only when the profile has enough trust information for customers."}
+                      </p>
                     </div>
 
                     <label className="admin-notes-field">
@@ -2523,7 +3688,10 @@ export default function App() {
                     </label>
 
                     <div className="actions">
-                      <button onClick={() => updateProviderApproval(provider.id, "approved")}>
+                      <button
+                        disabled={provider.trust_ready === false}
+                        onClick={() => updateProviderApproval(provider.id, "approved")}
+                      >
                         Approve Provider
                       </button>
                       <button
@@ -2556,10 +3724,15 @@ export default function App() {
             loadApplications={loadApplications}
             completeTask={completeTask}
             updateTaskPaymentStatus={updateTaskPaymentStatus}
+            customerApplications={customerApplications}
+            customerReviewTasks={customerReviewTasks}
+            openMessagesModal={openMessagesModal}
+            openReviewModal={openReviewModal}
             activeMode={activeMode}
             currentUserId={currentUserId}
             providerApprovalStatus={myProviderApprovalStatus}
             providerApplications={providerApplications}
+            archiveTask={isAdmin ? archiveTask : null}
           />
 
           {activeMode === "customer" && (
@@ -2573,7 +3746,10 @@ export default function App() {
               applicationsTask={applicationsTask}
               applications={applications}
               applicationsError={applicationsError}
-              openProviderProfile={openProviderProfile}
+              applicationsLoading={applicationsLoading}
+              isApplicationsModalOpen={isApplicationsModalOpen}
+              closeApplicationsModal={closeApplicationsModal}
+              openProviderProfile={openProviderProfileFromApplications}
               updateApplicationStatus={updateApplicationStatus}
             />
           )}
@@ -2600,8 +3776,13 @@ export default function App() {
 
           <MatchedProviders
             selectedTask={selectedTask}
+            selectedTaskInfo={selectedMatchTask}
             matches={matches}
             openProviderProfile={openProviderProfile}
+            saveProvider={saveProvider}
+            savedProviderIds={savedProviders.map((provider) => Number(provider.id))}
+            isOpen={isMatchesModalOpen}
+            onClose={() => setIsMatchesModalOpen(false)}
           />
 
           {selectedProviderProfile && (
@@ -2620,6 +3801,8 @@ export default function App() {
             <ProviderDirectoryPanel
               searchCategory={searchCategory}
               searchLocation={searchLocation}
+              totalProviderCount={providers.length}
+              customerVisibleProviderCount={customerVisibleProviders.length}
               loadProviders={loadProviders}
               clearProviderFilters={() => {
                 setSearchCategory("");
@@ -2643,9 +3826,12 @@ export default function App() {
               }}
               loadMessages={loadMessages}
               taskMessages={taskMessages}
+              messagesLoading={messagesLoading}
               messageBody={messageBody}
               setMessageBody={setMessageBody}
               sendMessage={sendMessage}
+              isMessagesModalOpen={isMessagesModalOpen}
+              closeMessagesModal={closeMessagesModal}
             />
           )}
 
@@ -2659,6 +3845,8 @@ export default function App() {
               reviewComment={reviewComment}
               setReviewComment={setReviewComment}
               submitReview={submitReview}
+              isReviewModalOpen={isReviewModalOpen}
+              closeReviewModal={closeReviewModal}
             />
           )}
         </>
