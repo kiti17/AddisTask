@@ -25,6 +25,11 @@ RESTORABLE_TASK_STATUSES = {"open", "assigned", "completed"}
 class TaskArchiveRequest(BaseModel):
     reason: str | None = None
 
+
+class ProviderReminderRequest(BaseModel):
+    message: str | None = None
+
+
 WORKFLOW_TEST_USER_NAMES = {
     "Identity Test User",
     "Normal Approval User",
@@ -75,6 +80,30 @@ def parse_audit_details(details):
         return json.loads(details)
     except json.JSONDecodeError:
         return {}
+
+
+def provider_missing_trust_requirements(provider: ProviderProfile):
+    missing = []
+
+    if not provider.bio or len(provider.bio.strip()) < 20:
+        missing.append("Profile bio")
+
+    if (provider.experience_years or 0) <= 0:
+        missing.append("Experience")
+
+    if not provider.service_area or not provider.service_area.strip():
+        missing.append("Service areas")
+
+    if not provider.availability or not provider.availability.strip():
+        missing.append("Availability")
+
+    if not provider.contact_phone or not provider.contact_phone.strip():
+        missing.append("Contact phone")
+
+    if provider.id_verification_status != "submitted":
+        missing.append("ID submitted")
+
+    return missing
 
 
 def id_list(query):
@@ -276,6 +305,46 @@ def get_admin_audit_log(
         }
         for log in logs
     ]
+
+
+@router.post("/providers/{provider_id}/reminder")
+def record_provider_reminder(
+    provider_id: int,
+    reminder_request: ProviderReminderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    provider = db.query(ProviderProfile).filter(ProviderProfile.id == provider_id).first()
+
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider profile not found")
+
+    message = (reminder_request.message or "").strip() or "Provider reminder sent"
+    audit_log = create_admin_audit_log(
+        db,
+        current_user,
+        "remind_provider",
+        "provider",
+        provider.id,
+        {
+            "business_name": provider.business_name,
+            "message": message,
+            "missing_trust_requirements": provider_missing_trust_requirements(provider),
+            "admin_name": current_user.full_name,
+        },
+    )
+    db.commit()
+    db.refresh(audit_log)
+
+    return {
+        "id": audit_log.id,
+        "admin_id": audit_log.admin_id,
+        "action": audit_log.action,
+        "entity_type": audit_log.entity_type,
+        "entity_id": audit_log.entity_id,
+        "details": parse_audit_details(audit_log.details),
+        "created_at": audit_log.created_at,
+    }
 
 
 @router.patch("/tasks/{task_id}/archive")

@@ -74,8 +74,8 @@ Goal: support a controlled Addis Ababa pilot with real providers.
 
 1. Provider verification details
    - Add provider bio, experience, service areas, ID/document status, and availability.
-   - Add internal admin notes for approval decisions.
-   - Track who approved or rejected a provider.
+   - Internal admin notes for approval decisions are in place.
+   - Provider reminders, approvals, rejections, and pending resets are recorded in admin history.
 
 2. Customer and provider history
    - Show task history by role.
@@ -94,7 +94,7 @@ Goal: support a controlled Addis Ababa pilot with real providers.
    - Notify both sides when task is completed or reviewed.
 
 5. Basic audit logs
-   - Track provider approval decisions.
+   - Provider reminder and approval decision history is now in place for pilot operations.
    - Track task status changes.
    - Track application acceptance and rejection.
 

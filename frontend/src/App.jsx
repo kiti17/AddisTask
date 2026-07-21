@@ -11,6 +11,7 @@ import ReviewPanel from "./components/ReviewPanel";
 import ProviderProfilePanel from "./components/ProviderProfilePanel";
 import ProviderDirectoryPanel from "./components/ProviderDirectoryPanel";
 import ProviderTrustSummary from "./components/ProviderTrustSummary";
+import { getProviderTrustSummary } from "./utils/providerTrust";
 import serviceCleaning from "./assets/service-cleaning.jpg";
 import servicePlumbing from "./assets/service-plumbing.jpg";
 import serviceElectrical from "./assets/service-electrical.jpg";
@@ -298,6 +299,7 @@ export default function App() {
   const [providerServiceArea, setProviderServiceArea] = useState("");
   const [providerAvailability, setProviderAvailability] = useState("");
   const [providerContactPhone, setProviderContactPhone] = useState("");
+  const [providerFormProfileId, setProviderFormProfileId] = useState(null);
 
   const [selectedTask, setSelectedTask] = useState(null);
   const [matches, setMatches] = useState([]);
@@ -696,8 +698,15 @@ export default function App() {
     setMarketplaceSyncedAt(getRefreshTime());
   };
 
-  const updateProviderApproval = async (providerId, status) => {
+  const updateProviderApproval = async (providerOrId, status) => {
     try {
+      const provider =
+        typeof providerOrId === "object"
+          ? providerOrId
+          : verificationQueue.find((item) => Number(item.id) === Number(providerOrId)) ||
+            providers.find((item) => Number(item.id) === Number(providerOrId));
+      const providerId = provider?.id || providerOrId;
+
       if (!token) {
         setView("account");
         return alert("Login first to update provider approval.");
@@ -711,6 +720,16 @@ export default function App() {
 
       if (status === "rejected" && !adminNotes) {
         return alert("Add a short reason before rejecting this provider.");
+      }
+
+      if (status === "approved" && provider) {
+        const trust = getProviderTrustSummary(provider);
+
+        if (!trust.ready) {
+          return alert(
+            `This provider cannot be approved yet. Complete these items first:\n- ${trust.missing.join("\n- ")}`
+          );
+        }
       }
 
       await api.patch(
@@ -735,6 +754,52 @@ export default function App() {
       }
     } catch (err) {
       alert(getErrorMessage(err, "Provider approval update failed"));
+    }
+  };
+
+  const getProviderReminderMessage = (provider) => {
+    const missingItems = provider.missing_trust_requirements?.length
+      ? provider.missing_trust_requirements.join(", ")
+      : "the missing provider profile details";
+    const providerName = provider.business_name || "there";
+
+    return [
+      `Hi ${providerName}, your AddisTask provider profile needs a little more detail before approval.`,
+      `Please update: ${missingItems}.`,
+      "Open Provider Mode, choose Fix Missing Details, make the changes, and resubmit for admin review.",
+      "Thank you.",
+    ].join(" ");
+  };
+
+  const copyProviderReminder = async (provider) => {
+    const reminder = getProviderReminderMessage(provider);
+    const recordReminder = async () => {
+      const res = await api.post(
+        `/api/admin/providers/${provider.id}/reminder`,
+        { message: reminder },
+        authHeader
+      );
+
+      setAdminAuditLog((current) => [res.data, ...current].slice(0, 8));
+    };
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        window.prompt("Copy this provider reminder", reminder);
+        await recordReminder();
+        return;
+      }
+
+      await navigator.clipboard.writeText(reminder);
+      await recordReminder();
+      alert("Provider reminder copied and recorded in Admin history.");
+    } catch {
+      window.prompt("Copy this provider reminder", reminder);
+      try {
+        await recordReminder();
+      } catch {
+        alert("Reminder text is ready, but it could not be recorded in Admin history.");
+      }
     }
   };
 
@@ -1041,6 +1106,59 @@ export default function App() {
     }
   };
 
+  const resetProviderForm = () => {
+    setProviderName("");
+    setProviderCategory(serviceCategories[0]);
+    setProviderCity(addisAreas[0]);
+    setProviderBio("");
+    setProviderExperienceYears("");
+    setProviderServiceArea("");
+    setProviderAvailability("");
+    setProviderContactPhone("");
+    setProviderFormProfileId(null);
+  };
+
+  const fillProviderFormFromProfile = (profile) => {
+    setProviderName(profile.business_name || "");
+    setProviderCategory(profile.skill_category || serviceCategories[0]);
+    setProviderCity(profile.city || addisAreas[0]);
+    setProviderBio(profile.bio || "");
+    setProviderExperienceYears(
+      Number.isFinite(Number(profile.experience_years))
+        ? String(profile.experience_years)
+        : ""
+    );
+    setProviderServiceArea(profile.service_area || "");
+    setProviderAvailability(profile.availability || "");
+    setProviderContactPhone(profile.contact_phone || "");
+    setProviderFormProfileId(profile.id || null);
+  };
+
+  const openProviderProfileForm = async () => {
+    changeActiveMode("provider");
+
+    if (!token) {
+      setView("provider");
+      return;
+    }
+
+    if (myProviderProfile) {
+      fillProviderFormFromProfile(myProviderProfile);
+      setView("provider");
+      return;
+    }
+
+    try {
+      const res = await api.get("/api/providers/me", authHeader);
+      setMyProviderProfile(res.data);
+      fillProviderFormFromProfile(res.data);
+    } catch {
+      resetProviderForm();
+    }
+
+    setView("provider");
+  };
+
   const createProvider = async () => {
     try {
       if (!token) {
@@ -1052,15 +1170,42 @@ export default function App() {
         return alert("Switch to Provider Mode before creating a provider profile.");
       }
 
+      const isUpdatingProvider = Boolean(myProviderProfile);
+      const formLoadedFromCurrentProfile =
+        isUpdatingProvider && providerFormProfileId === myProviderProfile.id;
+      const useExistingSelectValues = isUpdatingProvider && !formLoadedFromCurrentProfile;
+      const providerNameValue = providerName.trim() || myProviderProfile?.business_name || "";
+      const providerCategoryValue = useExistingSelectValues
+        ? myProviderProfile.skill_category
+        : providerCategory;
+      const providerCityValue = useExistingSelectValues
+        ? myProviderProfile.city
+        : providerCity;
+      const providerBioValue = providerBio.trim() || myProviderProfile?.bio || null;
+      const providerServiceAreaValue =
+        providerServiceArea.trim() ||
+        myProviderProfile?.service_area ||
+        providerCityValue;
+      const providerAvailabilityValue =
+        providerAvailability.trim() || myProviderProfile?.availability || null;
+      const providerContactPhoneValue =
+        providerContactPhone.trim() || myProviderProfile?.contact_phone || phone || null;
+      const providerExperienceYearsValue =
+        providerExperienceYears !== ""
+          ? Number(providerExperienceYears)
+          : Number(myProviderProfile?.experience_years || 0);
+
       const providerPayload = {
-        business_name: providerName,
-        skill_category: providerCategory,
-        city: providerCity,
-        bio: providerBio || null,
-        experience_years: providerExperienceYears ? Number(providerExperienceYears) : 0,
-        service_area: providerServiceArea || providerCity,
-        availability: providerAvailability || null,
-        contact_phone: providerContactPhone || phone || null,
+        business_name: providerNameValue,
+        skill_category: providerCategoryValue,
+        city: providerCityValue,
+        bio: providerBioValue,
+        experience_years: Number.isFinite(providerExperienceYearsValue)
+          ? Math.max(providerExperienceYearsValue, 0)
+          : 0,
+        service_area: providerServiceAreaValue,
+        availability: providerAvailabilityValue,
+        contact_phone: providerContactPhoneValue,
       };
 
       if (myProviderProfile) {
@@ -1069,14 +1214,15 @@ export default function App() {
         await api.post("/api/providers/", providerPayload, authHeader);
       }
 
-      alert("Provider profile submitted for approval. Apply after the profile is approved.");
+      alert(
+        myProviderProfile
+          ? "Provider profile updated and resubmitted for approval."
+          : "Provider profile submitted for approval. Apply after the profile is approved."
+      );
 
-      setProviderName("");
-      setProviderBio("");
-      setProviderExperienceYears("");
-      setProviderServiceArea("");
-      setProviderAvailability("");
-      setProviderContactPhone("");
+      if (!myProviderProfile) {
+        resetProviderForm();
+      }
 
       await loadTasks();
       await loadProviders();
@@ -1089,6 +1235,11 @@ export default function App() {
 
   const loadProviderProfileIntoForm = async () => {
     try {
+      if (!token) {
+        setIsAccountModalOpen(true);
+        return alert("Login first to edit your provider profile.");
+      }
+
       let profile = myProviderProfile;
 
       if (!profile) {
@@ -1097,14 +1248,8 @@ export default function App() {
         setMyProviderProfile(profile);
       }
 
-      setProviderName(profile.business_name || "");
-      setProviderCategory(profile.skill_category || serviceCategories[0]);
-      setProviderCity(profile.city || addisAreas[0]);
-      setProviderBio(profile.bio || "");
-      setProviderExperienceYears(String(profile.experience_years || 0));
-      setProviderServiceArea(profile.service_area || "");
-      setProviderAvailability(profile.availability || "");
-      setProviderContactPhone(profile.contact_phone || "");
+      changeActiveMode("provider");
+      fillProviderFormFromProfile(profile);
       setView("provider");
     } catch (err) {
       alert(getErrorMessage(err, "Failed to load provider profile"));
@@ -1620,6 +1765,84 @@ export default function App() {
     (provider) => provider.approval_status === "pending"
   );
   const myProviderApprovalStatus = myProviderProfile?.approval_status || "not submitted";
+  const providerMissingTrustItems = myProviderProfile?.missing_trust_requirements || [];
+  const providerNeedsTrustDetails = Boolean(
+    myProviderProfile && myProviderProfile.trust_ready === false
+  );
+  const providerApprovalGuidance = (() => {
+    if (!myProviderProfile) {
+      return {
+        count: 1,
+        title: "Create provider profile",
+        text: "Create a provider profile before applying to customer tasks.",
+        action: "Create Profile",
+        heading: "Create your provider profile",
+        detail: "Add your service, area, experience, availability, and contact details for admin review.",
+        tone: "attention",
+      };
+    }
+
+    if (myProviderApprovalStatus === "approved") {
+      return {
+        count: 0,
+        title: "Provider approved",
+        text: "Your provider profile is approved. You can now apply to matching tasks.",
+        action: "Browse Tasks",
+        heading: "Approved and ready",
+        detail: "You can now apply to matching open tasks and track customer decisions in Provider Activity.",
+        tone: "success",
+      };
+    }
+
+    if (myProviderApprovalStatus === "rejected") {
+      return {
+        count: 1,
+        title: "Provider changes needed",
+        text: myProviderProfile.admin_notes
+          ? `Admin note: ${myProviderProfile.admin_notes}`
+          : "Update your provider profile and resubmit it for admin review.",
+        action: "Edit Profile",
+        heading: "Changes requested",
+        detail: myProviderProfile.admin_notes
+          ? `Admin note: ${myProviderProfile.admin_notes}`
+          : "Update the requested profile details, then resubmit for approval.",
+        tone: "attention",
+      };
+    }
+
+    if (providerNeedsTrustDetails) {
+      const missingSummary = providerMissingTrustItems.length
+        ? `Missing: ${providerMissingTrustItems.join(", ")}.`
+        : "Some trust details are still missing.";
+
+      return {
+        count: 1,
+        title: "Missing approval details",
+        text: `${missingSummary} Fix these details and resubmit for review.`,
+        action: "Fix Details",
+        heading: "Missing details before approval",
+        detail: `${missingSummary} Your saved information will stay in the form when you edit.`,
+        tone: "attention",
+      };
+    }
+
+    return {
+      count: 1,
+      title: "Ready for admin review",
+      text: "Your profile is complete and waiting for admin approval.",
+      action: "Check Status",
+      heading: "Profile resubmitted",
+      detail: "Your profile has the required trust details and is waiting for admin review.",
+      tone: "ready",
+    };
+  })();
+  const providerQueueSource = verificationQueue.length ? verificationQueue : pendingProviders;
+  const providerQueueReadyCount = providerQueueSource.filter(
+    (provider) => provider.trust_ready === true
+  ).length;
+  const providerQueueNeedsDetailsCount = providerQueueSource.filter(
+    (provider) => provider.trust_ready === false
+  ).length;
   const acceptedProviderApplications = providerApplications.filter(
     (application) => application.status === "accepted"
   );
@@ -1753,13 +1976,10 @@ export default function App() {
   const providerNotifications = [
     {
       id: "provider-approval",
-      count: myProviderApprovalStatus === "approved" ? 0 : 1,
-      title: "Provider approval",
-      text:
-        myProviderApprovalStatus === "approved"
-          ? "Your provider profile is approved and ready for applications."
-          : `Current status: ${myProviderApprovalStatus}. Approval is required before applying.`,
-      action: "Check Status",
+      count: providerApprovalGuidance.count,
+      title: providerApprovalGuidance.title,
+      text: providerApprovalGuidance.text,
+      action: providerApprovalGuidance.action,
     },
     {
       id: "provider-accepted",
@@ -1783,16 +2003,18 @@ export default function App() {
   const adminNotifications = [
     {
       id: "admin-verification",
-      count: pendingProviders.length,
+      count: providerQueueSource.length,
+      attentionCount: providerQueueSource.length,
       title: "Providers waiting",
-      text: pendingProviders.length
-        ? "Review new provider profiles before they can apply to customer tasks."
+      text: providerQueueSource.length
+        ? `${providerQueueReadyCount} ready to approve, ${providerQueueNeedsDetailsCount} need provider updates.`
         : "No provider profiles are waiting for approval.",
       action: "Load Queue",
     },
     {
       id: "admin-supply",
       count: approvedProviders.length,
+      attentionCount: 0,
       title: "Approved supply",
       text: approvedProviders.length
         ? "Approved providers are visible and eligible for customer tasks."
@@ -1802,6 +2024,7 @@ export default function App() {
     {
       id: "admin-open-tasks",
       count: openTasks,
+      attentionCount: openTasks,
       title: "Open customer requests",
       text: openTasks
         ? "These customer tasks still need provider applications."
@@ -1861,8 +2084,10 @@ export default function App() {
       : activeMode === "customer"
         ? customerNotifications
         : providerNotifications;
+  const getNotificationAttentionCount = (notification) =>
+    notification.attentionCount ?? notification.count;
   const activeNotificationCount = activeNotifications.reduce(
-    (sum, notification) => sum + notification.count,
+    (sum, notification) => sum + getNotificationAttentionCount(notification),
     0
   );
   const activeModeLabel =
@@ -1873,23 +2098,23 @@ export default function App() {
         : "Provider Mode";
   const notificationDescription =
     activeMode === "admin"
-      ? "Admin alerts for provider approval, marketplace supply, and open demand."
+      ? "Admin action items for provider approval and open demand. Supply stays visible as information."
       : activeMode === "customer"
         ? "Customer alerts for applications, assigned work, and reviews."
         : "Provider alerts for approval, applications, and accepted work.";
   const globalNotificationCount =
     activeMode === "admin"
-      ? pendingProviders.length
+      ? activeNotificationCount
       : activeMode === "customer"
         ? pendingCustomerApplications.length + myAssignedTasks.length + myCompletedTasks.length
-        : (myProviderApprovalStatus === "approved" ? 0 : 1) +
+        : providerApprovalGuidance.count +
           acceptedProviderApplications.length +
           pendingProviderApplications.length;
   const globalNotificationText =
     activeMode === "admin"
-      ? pendingProviders.length
-        ? `${pendingProviders.length} provider profile${pendingProviders.length === 1 ? "" : "s"} waiting approval`
-        : "No provider approvals waiting"
+      ? globalNotificationCount
+        ? `${globalNotificationCount} admin action${globalNotificationCount === 1 ? "" : "s"} waiting`
+        : "No admin actions waiting"
       : activeMode === "customer"
         ? globalNotificationCount
           ? `${globalNotificationCount} customer action${globalNotificationCount === 1 ? "" : "s"} waiting`
@@ -2169,9 +2394,35 @@ export default function App() {
     const labels = {
       archive_task: "Task hidden",
       restore_task: "Task restored",
+      remind_provider: "Provider reminded",
+      approved_provider: "Provider approved",
+      rejected_provider: "Provider rejected",
+      pending_provider: "Provider reset to pending",
     };
 
     return labels[action] || action.replaceAll("_", " ");
+  };
+  const formatAdminAuditDetail = (log) => {
+    const details = log.details || {};
+
+    if (log.entity_type === "provider") {
+      const providerName = details.business_name || `Provider #${log.entity_id}`;
+      const note = details.admin_notes ? `Note: ${details.admin_notes}` : "";
+      const missing = details.missing_trust_requirements?.length
+        ? `Missing: ${details.missing_trust_requirements.join(", ")}`
+        : "";
+
+      return [providerName, note, missing].filter(Boolean).join(" | ");
+    }
+
+    if (log.entity_type === "task") {
+      const title = details.title || `Task #${log.entity_id}`;
+      const reason = details.reason ? `Reason: ${details.reason}` : "";
+
+      return [title, reason].filter(Boolean).join(" | ");
+    }
+
+    return `${log.entity_type} #${log.entity_id}`;
   };
   const runNotificationAction = (notificationId) => {
     if (notificationId === "admin-verification") {
@@ -2224,7 +2475,21 @@ export default function App() {
     }
 
     if (activeMode === "provider" && notificationId === "provider-approval") {
-      setView("provider");
+      if (!myProviderProfile) {
+        openProviderProfileForm();
+        return;
+      }
+
+      if (
+        myProviderApprovalStatus === "rejected" ||
+        myProviderProfile.trust_ready === false
+      ) {
+        loadProviderProfileIntoForm();
+        return;
+      }
+
+      setView("marketplace");
+      loadMyProviderProfile({ silent: true });
       return;
     }
 
@@ -2402,6 +2667,7 @@ export default function App() {
         notificationUpdatedAt={marketplaceSyncedAt}
         setSearchCategory={setSearchCategory}
         openAccountModal={() => setIsAccountModalOpen(true)}
+        openProviderProfileForm={openProviderProfileForm}
         showHero={view === "home"}
       />
 
@@ -2595,10 +2861,7 @@ export default function App() {
 
                 <div className="home-focus-action">
                   <button
-                    onClick={() => {
-                      changeActiveMode("provider");
-                      setView("provider");
-                    }}
+                    onClick={openProviderProfileForm}
                   >
                     Become a Provider
                   </button>
@@ -2896,6 +3159,27 @@ export default function App() {
             </p>
           </div>
 
+          {myProviderProfile && (
+            <div className="provider-edit-note">
+              <strong>
+                {myProviderProfile.trust_ready === false
+                  ? "Fix only the missing approval details"
+                  : "Edit only what changed"}
+              </strong>
+              <p>
+                Your saved profile details are loaded here. Change the field you
+                need, then resubmit without retyping the whole profile.
+              </p>
+              {myProviderProfile.trust_ready === false && (
+                <div className="trust-list compact">
+                  {(myProviderProfile.missing_trust_requirements || []).map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <label className="field-label">
             Business or provider name
             <input
@@ -3154,23 +3438,27 @@ export default function App() {
             </div>
 
             <div className="notification-grid">
-              {activeNotifications.map((notification) => (
-                <div className="notification-card" key={notification.id}>
-                  <span className={notification.count ? "notification-count active" : "notification-count"}>
-                    {notification.count}
-                  </span>
-                  <div>
-                    <strong>{notification.title}</strong>
-                    <p>{notification.text}</p>
+              {activeNotifications.map((notification) => {
+                const attentionCount = getNotificationAttentionCount(notification);
+
+                return (
+                  <div className="notification-card" key={notification.id}>
+                    <span className={attentionCount ? "notification-count active" : "notification-count"}>
+                      {notification.count}
+                    </span>
+                    <div>
+                      <strong>{notification.title}</strong>
+                      <p>{notification.text}</p>
+                    </div>
+                    <button
+                      className="secondary-btn inline"
+                      onClick={() => runNotificationAction(notification.id)}
+                    >
+                      {notification.action}
+                    </button>
                   </div>
-                  <button
-                    className="secondary-btn inline"
-                    onClick={() => runNotificationAction(notification.id)}
-                  >
-                    {notification.action}
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {activeMode === "admin" && (
@@ -3551,10 +3839,10 @@ export default function App() {
 
                 {adminAuditLog.map((log) => (
                   <div className="audit-log-row" key={log.id}>
-                    <strong>{formatAdminAction(log.action)}</strong>
-                    <span>
-                      {log.entity_type} #{log.entity_id}
-                    </span>
+                    <div>
+                      <strong>{formatAdminAction(log.action)}</strong>
+                      <span>{formatAdminAuditDetail(log)}</span>
+                    </div>
                     <small>
                       {log.created_at
                         ? new Date(log.created_at).toLocaleString()
@@ -3588,7 +3876,15 @@ export default function App() {
             <div className="activity-summary">
               <div>
                 <span>Waiting approval</span>
-                <strong>{pendingProviders.length}</strong>
+                <strong>{providerQueueSource.length}</strong>
+              </div>
+              <div>
+                <span>Ready to approve</span>
+                <strong>{providerQueueReadyCount}</strong>
+              </div>
+              <div>
+                <span>Need updates</span>
+                <strong>{providerQueueNeedsDetailsCount}</strong>
               </div>
               <div>
                 <span>Approved</span>
@@ -3629,7 +3925,33 @@ export default function App() {
                     <p className="provider-bio">{provider.bio}</p>
                   )}
 
+                  <div className={`admin-readiness-banner ${provider.trust_ready ? "ready" : "attention"}`}>
+                    <strong>
+                      {provider.trust_ready ? "Ready for approval decision" : "Needs provider update"}
+                    </strong>
+                    <p>
+                      {provider.trust_ready
+                        ? "This profile has the required trust details. Approve it if the service looks legitimate."
+                        : "Ask the provider to complete the missing items before approval."}
+                    </p>
+                  </div>
+
                   <ProviderTrustSummary provider={provider} />
+
+                  {provider.trust_ready === false && (
+                    <div className="provider-reminder-panel">
+                      <div>
+                        <strong>Provider reminder</strong>
+                        <p>{getProviderReminderMessage(provider)}</p>
+                      </div>
+                      <button
+                        className="secondary-btn inline"
+                        onClick={() => copyProviderReminder(provider)}
+                      >
+                        Copy Reminder
+                      </button>
+                    </div>
+                  )}
 
                   <div className="admin-review-grid">
                     <div>
@@ -3670,6 +3992,13 @@ export default function App() {
                           ? "Complete the trust checklist before approval."
                           : "Approve only when the profile has enough trust information for customers."}
                       </p>
+                      {provider.trust_ready === false && (
+                        <ul className="missing-trust-list">
+                          {(provider.missing_trust_requirements || []).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
 
                     <label className="admin-notes-field">
@@ -3689,14 +4018,14 @@ export default function App() {
 
                     <div className="actions">
                       <button
-                        disabled={provider.trust_ready === false}
-                        onClick={() => updateProviderApproval(provider.id, "approved")}
+                        className={provider.trust_ready === false ? "secondary-btn inline attention-btn" : ""}
+                        onClick={() => updateProviderApproval(provider, "approved")}
                       >
                         Approve Provider
                       </button>
                       <button
                         className="secondary-btn inline"
-                        onClick={() => updateProviderApproval(provider.id, "rejected")}
+                        onClick={() => updateProviderApproval(provider, "rejected")}
                       >
                         Reject
                       </button>
@@ -3706,6 +4035,51 @@ export default function App() {
               ))}
             </div>
           </section>
+          )}
+
+          {activeMode === "customer" && (
+            <CustomerDashboard
+              pendingCustomerApplications={pendingCustomerApplications}
+              myAssignedTasks={myAssignedTasks}
+              customerPaymentSummary={customerPaymentSummary}
+              customerReviewTasks={customerReviewTasks}
+              myOpenTasks={myOpenTasks}
+              myCompletedTasks={myCompletedTasks}
+              applicationsTask={applicationsTask}
+              applications={applications}
+              applicationsError={applicationsError}
+              applicationsLoading={applicationsLoading}
+              isApplicationsModalOpen={isApplicationsModalOpen}
+              closeApplicationsModal={closeApplicationsModal}
+              openProviderProfile={openProviderProfileFromApplications}
+              updateApplicationStatus={updateApplicationStatus}
+              openApplicationsWindow={() => runNotificationAction("customer-applications")}
+              openMessagesWindow={() => runNotificationAction("customer-assigned")}
+              openReviewWindow={() => runNotificationAction("customer-reviews")}
+            />
+          )}
+
+          {activeMode === "provider" && (
+            <ProviderDashboard
+              myProviderApprovalStatus={myProviderApprovalStatus}
+              providerActionableOpenTasks={providerActionableOpenTasks}
+              pendingProviderApplications={pendingProviderApplications}
+              acceptedProviderApplications={acceptedProviderApplications}
+              rejectedProviderApplications={rejectedProviderApplications}
+              myProviderProfile={myProviderProfile}
+              providerApprovalGuidance={providerApprovalGuidance}
+              approvedProviders={approvedProviders}
+              pendingProviders={pendingProviders}
+              loadMyProviderProfile={loadMyProviderProfile}
+              openProviderProfileForm={openProviderProfileForm}
+              loadProviderProfileIntoForm={loadProviderProfileIntoForm}
+              loadProviderApplications={loadProviderApplications}
+              providerActivityLoadedAt={providerActivityLoadedAt}
+              providerApplications={providerApplications}
+              getProviderApplicationNotice={getProviderApplicationNotice}
+              applyToTask={applyToTask}
+              openProviderMessages={() => runNotificationAction("provider-accepted")}
+            />
           )}
 
           <Marketplace
@@ -3734,45 +4108,6 @@ export default function App() {
             providerApplications={providerApplications}
             archiveTask={isAdmin ? archiveTask : null}
           />
-
-          {activeMode === "customer" && (
-            <CustomerDashboard
-              pendingCustomerApplications={pendingCustomerApplications}
-              myAssignedTasks={myAssignedTasks}
-              customerPaymentSummary={customerPaymentSummary}
-              customerReviewTasks={customerReviewTasks}
-              myOpenTasks={myOpenTasks}
-              myCompletedTasks={myCompletedTasks}
-              applicationsTask={applicationsTask}
-              applications={applications}
-              applicationsError={applicationsError}
-              applicationsLoading={applicationsLoading}
-              isApplicationsModalOpen={isApplicationsModalOpen}
-              closeApplicationsModal={closeApplicationsModal}
-              openProviderProfile={openProviderProfileFromApplications}
-              updateApplicationStatus={updateApplicationStatus}
-            />
-          )}
-
-          {activeMode === "provider" && (
-            <ProviderDashboard
-              myProviderApprovalStatus={myProviderApprovalStatus}
-              providerActionableOpenTasks={providerActionableOpenTasks}
-              pendingProviderApplications={pendingProviderApplications}
-              acceptedProviderApplications={acceptedProviderApplications}
-              rejectedProviderApplications={rejectedProviderApplications}
-              myProviderProfile={myProviderProfile}
-              approvedProviders={approvedProviders}
-              pendingProviders={pendingProviders}
-              loadMyProviderProfile={loadMyProviderProfile}
-              openProviderProfileForm={() => setView("provider")}
-              loadProviderProfileIntoForm={loadProviderProfileIntoForm}
-              loadProviderApplications={loadProviderApplications}
-              providerActivityLoadedAt={providerActivityLoadedAt}
-              providerApplications={providerApplications}
-              getProviderApplicationNotice={getProviderApplicationNotice}
-            />
-          )}
 
           <MatchedProviders
             selectedTask={selectedTask}

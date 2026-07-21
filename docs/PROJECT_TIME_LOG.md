@@ -364,3 +364,59 @@ This log tracks development effort as AddisTask moves from MSSE project to start
 - Outcome: Added a Pilot Run panel to admin Marketplace Operations that tracks one customer/provider transaction from posted task through provider readiness, application, acceptance, messages, completion, and review. Added `docs/PILOT_RUN_SHEET.md` and linked it from the launch/manual testing checklists.
 - Business value added: Gives the owner a simple operating view for the first live pilot test and a reusable sheet for recording what happened and what needs fixing.
 - Next recommended step: Use the real admin account to scan data, hide old records, and run one controlled pilot flow with one customer and one provider.
+
+### 2026-07-20 Continued
+
+- Session focus: Fix confusing provider approval behavior in the admin queue.
+- Time spent: Estimated 30 minutes.
+- Outcome: Changed the admin Approve Provider action so incomplete provider profiles no longer look like a dead button. The button remains clickable, incomplete profiles show the missing trust checklist directly on the card, and clicking approval explains what must be completed before approval. Browser-tested with a temporary incomplete provider profile and cleaned the temporary data afterward.
+- Business value added: Makes provider approval clearer for the marketplace owner while keeping the stricter trust-readiness rule in place before real customers see providers.
+- Next recommended step: Use the real admin account to review one pending provider and confirm which missing trust items should be completed before approval.
+
+### 2026-07-20 Continued 2
+
+- Session focus: Make provider profile correction easier.
+- Time spent: Estimated 35 minutes.
+- Outcome: Added a direct Fix Missing Details/Edit Profile path for providers, made the provider form load saved profile values before editing, and protected existing saved values during resubmission so providers can update one missing item such as the bio without retyping the full profile. Browser-tested with a temporary provider missing only the bio; the edit form loaded Moving, Bole, phone, experience, service areas, and availability, then the profile reached 100% trust readiness after adding a bio. Temporary data was cleaned afterward.
+- Business value added: Reduces provider frustration during approval and makes it more likely real providers complete the trust checklist instead of abandoning the process.
+- Next recommended step: Continue polishing the provider approval loop with clearer admin/provider messaging after resubmission.
+
+### 2026-07-20 Continued 3
+
+- Session focus: Clarify provider approval status and admin review actions.
+- Time spent: Estimated 30 minutes.
+- Outcome: Updated provider alerts and Provider Verification messaging so providers see whether they need to create a profile, fix missing details, wait for admin review, or start applying after approval. Updated the provider approval notification action so it opens the edit form only when edits are needed. Added admin queue counts for ready-to-approve versus needs-update profiles and readiness banners on provider review cards. Browser-tested with temporary provider/admin accounts covering one missing-bio provider and one approval-ready provider; temporary data was cleaned afterward.
+- Business value added: Makes the approval loop easier to operate for both providers and the marketplace owner, reducing confusion after resubmission.
+- Next recommended step: Continue with cleaner admin notification counts so the owner sees true action items, not informational counts.
+
+### 2026-07-20 Continued 4
+
+- Session focus: Make admin notification counts reflect real action items.
+- Time spent: Estimated 20 minutes.
+- Outcome: Separated notification action counts from informational marketplace metrics. Approved provider supply still appears in the admin notification cards, but it no longer increases the top alert badge or the "items need attention" total. Browser-tested with a temporary admin account and confirmed the admin badge counted provider queue plus open requests only, while approved supply stayed visible as an informational grey count. Temporary data was cleaned afterward.
+- Business value added: Gives the marketplace owner a more honest admin alert count, reducing noise and making urgent work easier to see.
+- Next recommended step: Continue with pilot-ready admin follow-up tools, such as quick provider reminder messages for profiles that need updates.
+
+### 2026-07-20 Continued 5
+
+- Session focus: Add quick provider reminder messages for incomplete profiles.
+- Time spent: Estimated 25 minutes.
+- Outcome: Added a Provider Reminder panel to incomplete provider cards in the admin approval queue. The app now generates a short reminder message with the provider name and exact missing trust items, plus a Copy Reminder button for manual SMS, WhatsApp, or direct-message follow-up. Browser-tested with a temporary incomplete provider profile and confirmed the reminder named Profile bio, Experience, Service areas, and Availability. Temporary data was cleaned afterward.
+- Business value added: Lets the owner follow up with providers faster and more consistently during the pilot without writing a custom message every time.
+- Next recommended step: Continue with admin decision history/notes so the owner can see when a provider was reminded, approved, or rejected.
+
+### 2026-07-20 Continued 6
+
+- Session focus: Record provider approval and reminder history for admin operations.
+- Time spent: Estimated 30 minutes.
+- Outcome: Added backend audit records for provider approval status changes and provider reminder messages. The admin history now labels provider reminders, approvals, rejections, and pending resets with the provider name, notes, and missing trust items where available. Updated the Copy Reminder action so manual provider follow-up is copied and recorded in Admin history.
+- Business value added: Gives the marketplace owner a clearer operating trail during the pilot, making it easier to know whether a provider was already reminded, approved, or rejected.
+- Next recommended step: Continue with a small admin usability pass on history filtering/search, or move to task/application audit history if operational tracking becomes the bigger need.
+
+### 2026-07-20 Continued 7
+
+- Session focus: Reduce scrolling in customer and provider dashboards.
+- Time spent: Estimated 30 minutes.
+- Outcome: Moved the role-focused Customer and Provider workspaces above the Marketplace list. Added focused workspace tabs so customers see one section at a time for Applications, Active Work, Payments, or History, and providers see one section at a time for Verification, Matching Tasks, or Activity. The next-step tiles now switch to the right workspace and open existing application, message, or review windows when needed.
+- Business value added: Makes the app easier for pilot users to operate because the most important role-specific actions are visible before the long marketplace list, and each click shows only the related information.
+- Next recommended step: Continue with a small real-user pilot script using one customer and one provider, or do one more pass on admin history filtering if owner operations feel crowded.

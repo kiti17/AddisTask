@@ -584,6 +584,22 @@ def test_pending_provider_cannot_apply_until_admin_approves():
     assert approval_response.json()["approval_status"] == "approved"
     assert approval_response.json()["admin_notes"] == "Profile has enough trust details for approval."
 
+    audit_response = client.get(
+        "/api/admin/audit-log?limit=5",
+        headers=auth_headers(admin["token"]),
+    )
+    assert audit_response.status_code == 200
+    approval_logs = [
+        log
+        for log in audit_response.json()
+        if log["action"] == "approved_provider"
+        and log["entity_type"] == "provider"
+        and log["entity_id"] == provider["id"]
+    ]
+    assert approval_logs
+    assert approval_logs[0]["details"]["business_name"] == provider["business_name"]
+    assert approval_logs[0]["details"]["new_status"] == "approved"
+
     apply_response = client.post(
         "/api/applications/",
         headers=auth_headers(provider_user["token"]),
@@ -630,6 +646,29 @@ def test_admin_cannot_approve_provider_missing_trust_details():
     assert (
         approval_response.json()["detail"]
         == "Provider profile needs trust details before approval"
+    )
+
+    reminder_response = client.post(
+        f"/api/admin/providers/{provider['id']}/reminder",
+        headers=auth_headers(admin["token"]),
+        json={"message": "Please complete the missing trust details."},
+    )
+    assert reminder_response.status_code == 200
+    reminder_body = reminder_response.json()
+    assert reminder_body["action"] == "remind_provider"
+    assert reminder_body["entity_type"] == "provider"
+    assert reminder_body["entity_id"] == provider["id"]
+    assert "Contact phone" in reminder_body["details"]["missing_trust_requirements"]
+
+    audit_response = client.get(
+        "/api/admin/audit-log?limit=5",
+        headers=auth_headers(admin["token"]),
+    )
+    assert audit_response.status_code == 200
+    assert any(
+        log["action"] == "remind_provider"
+        and log["entity_id"] == provider["id"]
+        for log in audit_response.json()
     )
 
 

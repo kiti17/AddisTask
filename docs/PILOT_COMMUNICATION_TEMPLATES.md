@@ -32,6 +32,8 @@ Hi [Name], your AddisTask provider profile still needs a little more detail befo
 
 Please check your service area, availability, contact phone, and experience details. These help customers trust who they are booking.
 
+In Admin Mode, use Copy Reminder from the Provider Approval Queue to generate a provider-specific message with the exact missing approval items.
+
 ## Forgot Password During Pilot
 
 Hi [Name], automated password reset is not active yet during this controlled pilot.

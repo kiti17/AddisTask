@@ -1,7 +1,10 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.models.admin_audit import AdminAuditLog
 from app.models.provider import ProviderProfile
 from app.models.task import Task
 from app.models.user import User
@@ -100,6 +103,24 @@ def provider_to_dict(provider: ProviderProfile):
         "approval_status": provider.approval_status,
         **trust_summary,
     }
+
+
+def create_provider_audit_log(
+    db: Session,
+    current_user: User,
+    action: str,
+    provider: ProviderProfile,
+    details: dict,
+):
+    db.add(
+        AdminAuditLog(
+            admin_id=current_user.id,
+            action=action,
+            entity_type="provider",
+            entity_id=provider.id,
+            details=json.dumps(details),
+        )
+    )
 
 
 def provider_is_customer_visible(provider: ProviderProfile):
@@ -261,6 +282,7 @@ def update_provider_approval_status(
         raise HTTPException(status_code=404, detail="Provider profile not found")
 
     trust_summary = provider_trust_summary(provider)
+    previous_status = provider.approval_status
 
     if approval_status == "approved" and not trust_summary["trust_ready"]:
         raise HTTPException(
@@ -270,6 +292,21 @@ def update_provider_approval_status(
 
     provider.approval_status = approval_status
     provider.admin_notes = admin_notes
+    create_provider_audit_log(
+        db,
+        current_user,
+        f"{approval_status}_provider",
+        provider,
+        {
+            "business_name": provider.business_name,
+            "previous_status": previous_status,
+            "new_status": approval_status,
+            "admin_notes": admin_notes,
+            "trust_score": trust_summary["trust_score"],
+            "missing_trust_requirements": trust_summary["missing_trust_requirements"],
+            "admin_name": current_user.full_name,
+        },
+    )
     db.commit()
     db.refresh(provider)
 

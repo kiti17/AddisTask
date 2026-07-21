@@ -13,6 +13,7 @@ export default function Hero({
   notificationCount,
   setSearchCategory,
   openAccountModal,
+  openProviderProfileForm,
   showHero = true,
 }) {
   const [heroSearch, setHeroSearch] = useState("");
@@ -111,6 +112,10 @@ export default function Hero({
           <button
             className="topbar-provider-btn"
             onClick={() => {
+              if (openProviderProfileForm) {
+                openProviderProfileForm();
+                return;
+              }
               setActiveMode("provider");
               setView("provider");
             }}
@@ -195,6 +200,10 @@ export default function Hero({
               <button
                 className="secondary-btn hero-secondary"
                 onClick={() => {
+                  if (openProviderProfileForm) {
+                    openProviderProfileForm();
+                    return;
+                  }
                   setActiveMode("provider");
                   setView("provider");
                 }}

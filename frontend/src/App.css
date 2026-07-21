@@ -367,6 +367,16 @@ button:disabled {
   opacity: 0.62;
 }
 
+.attention-btn {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+}
+
+.attention-btn:hover {
+  background: #ffedd5;
+}
+
 .logout-btn {
   background: #b42318;
 }
@@ -1356,6 +1366,68 @@ textarea {
   margin: 0;
 }
 
+.provider-status-message,
+.admin-readiness-banner {
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.provider-status-message strong,
+.admin-readiness-banner strong {
+  color: #172033;
+  display: block;
+  font-size: 16px;
+}
+
+.provider-status-message p,
+.admin-readiness-banner p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.provider-status-message.attention,
+.admin-readiness-banner.attention {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.provider-status-message.ready,
+.admin-readiness-banner.ready {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.provider-status-message.success {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+}
+
+.provider-edit-note {
+  background: #f8fbfa;
+  border: 1px solid #c5e7e1;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px;
+}
+
+.provider-edit-note strong {
+  color: #0f766e;
+  display: block;
+  font-size: 15px;
+}
+
+.provider-edit-note p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 0;
+}
+
 .guidance-panel {
   background: #f8fbfa;
   border: 1px solid #d8e1df;
@@ -2032,13 +2104,27 @@ textarea {
   margin-top: 18px;
 }
 
-.next-step-grid div {
+.next-step-grid div,
+.next-step-tile {
   background: #f8fbfa;
   border: 1px solid #d8e1df;
   border-radius: 8px;
+  color: #172033;
   display: grid;
   gap: 7px;
+  margin: 0;
   padding: 14px;
+  text-align: left;
+}
+
+.next-step-tile:hover {
+  background: #eef8f4;
+}
+
+.next-step-tile.active {
+  background: white;
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
 
 .next-step-grid span {
@@ -2063,6 +2149,131 @@ textarea {
   color: #667085;
   line-height: 1.45;
   margin: 0;
+}
+
+.focused-dashboard-panel {
+  border-color: #d8e1df;
+}
+
+.dashboard-tabs {
+  background: #f6f8fa;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  padding: 6px;
+}
+
+.dashboard-tabs button {
+  align-items: center;
+  background: transparent;
+  color: #3d4a5c;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 0;
+  min-width: 0;
+  padding: 10px;
+}
+
+.dashboard-tabs button.active {
+  background: #0f766e;
+  color: white;
+}
+
+.dashboard-tabs span {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.84);
+  border-radius: 999px;
+  color: #0b5f59;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  min-width: 26px;
+  padding: 3px 7px;
+}
+
+.dashboard-tabs button:not(.active) span {
+  background: #e7eceb;
+  color: #3d4a5c;
+}
+
+.focus-panel-content {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.dashboard-panel-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.dashboard-panel-header strong {
+  color: #172033;
+  display: block;
+  font-size: 20px;
+}
+
+.dashboard-panel-header p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 5px 0 0;
+}
+
+.compact-work-list {
+  display: grid;
+  gap: 10px;
+}
+
+.work-row {
+  align-items: center;
+  background: #f8fbfa;
+  border: 1px solid #d8e1df;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px;
+}
+
+.work-row strong,
+.work-row span,
+.work-row p {
+  overflow-wrap: anywhere;
+}
+
+.work-row strong {
+  color: #172033;
+  display: block;
+  font-size: 17px;
+}
+
+.work-row span {
+  color: #3d4a5c;
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.work-row p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 5px 0 0;
+}
+
+.work-row button {
+  justify-self: end;
+  margin: 0;
+}
+
+.compact-activity-list {
+  margin-top: 0;
 }
 
 .payment-summary-grid div {
@@ -2275,8 +2486,14 @@ textarea {
   border-radius: 8px;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: 10px 12px;
+}
+
+.audit-log-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .audit-log-row strong,
@@ -2367,6 +2584,45 @@ textarea {
   margin: 4px 0 0;
 }
 
+.missing-trust-list {
+  color: #9a3412;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.provider-reminder-panel {
+  align-items: flex-start;
+  background: #f8fbfa;
+  border: 1px solid #d8e1df;
+  border-radius: 8px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.provider-reminder-panel strong {
+  color: #172033;
+  display: block;
+  font-size: 16px;
+  margin-bottom: 5px;
+}
+
+.provider-reminder-panel p {
+  color: #667085;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.provider-reminder-panel button {
+  flex: 0 0 auto;
+}
+
 .admin-notes-field {
   color: #172033;
   display: grid;
@@ -2425,7 +2681,7 @@ textarea {
 .activity-summary {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin-top: 18px;
 }
 
@@ -3196,6 +3452,7 @@ textarea {
   .mode-panel,
   .active-workspace,
   .section-header,
+  .dashboard-panel-header,
   .task-list-heading,
   .row,
   .task-heading,
@@ -3271,6 +3528,7 @@ textarea {
   .form-grid,
   .metric-grid,
   .dashboard-grid,
+  .dashboard-tabs,
   .fee-estimate,
   .provider-grid,
   .provider-profile-grid,
@@ -3297,6 +3555,7 @@ textarea {
   .pilot-launch-list,
   .pilot-launch-item,
   .manual-message-card,
+  .work-row,
   .task-row,
   .insight-row {
     grid-template-columns: 1fr;
@@ -3341,6 +3600,19 @@ textarea {
 
   .toolbar-actions {
     justify-content: flex-start;
+  }
+
+  .dashboard-panel-header {
+    align-items: flex-start;
+  }
+
+  .dashboard-panel-header button,
+  .work-row button {
+    width: 100%;
+  }
+
+  .work-row button {
+    justify-self: stretch;
   }
 
   .task-list-heading button {
